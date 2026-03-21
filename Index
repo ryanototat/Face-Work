@@ -1,1 +1,3077 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Works</title>
+    <!-- Tailwind CSS untuk Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Peta Interaktif (Leaflet.js) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- FontAwesome untuk Ikon -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Z-index fix for Leaflet agar tidak tumpang tindih dengan modal */
+        .leaflet-container {
+            z-index: 1 !important;
+        }
+        /* Animasi untuk Toast Notification */
+        @keyframes slideInUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        .toast-enter {
+            animation: slideInUp 0.3s ease-out forwards;
+        }
+        .toast-exit {
+            animation: fadeOut 0.3s ease-out forwards;
+        }
+        /* Animasi pulse untuk tombol absen */
+        .pulse-btn {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            animation: pulse-blue 2s infinite;
+        }
+        @keyframes pulse-blue {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 15px rgba(59, 130, 246, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        /* Hide scrollbar for clean mobile look */
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+    </style>
+</head>
+<body class="text-gray-800 antialiased bg-gray-100 font-sans h-screen w-full">
 
+    <!-- VIEW: PINTU MASUK / PILIHAN AKSES (TANPA LOGIN) -->
+    <div id="view-login" class="flex flex-col items-center justify-center min-h-screen p-6 animate-fade-in relative overflow-hidden">
+        <!-- Background Decoration -->
+        <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+        
+        <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm z-10 text-center border border-gray-100">
+            <div class="w-20 h-20 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-lg mb-6">
+                <i class="fas fa-fingerprint text-white text-4xl"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">Face Works</h1>
+            <p class="text-gray-500 text-sm mb-8">Pilih akses masuk Anda ke dalam sistem.</p>
+            
+            <!-- Tombol Pilihan Langsung Masuk -->
+            <div id="role-selection" class="space-y-4 block">
+                <button onclick="showView('employee')" class="w-full py-3.5 bg-blue-600 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition flex items-center justify-center space-x-3 focus:outline-none">
+                    <i class="fas fa-user-tie text-lg"></i>
+                    <span>Masuk sebagai Karyawan</span>
+                </button>
+                <button onclick="showAdminLoginForm()" class="w-full py-3.5 bg-gray-800 text-white rounded-xl font-semibold shadow-lg shadow-gray-800/30 hover:bg-gray-900 transition flex items-center justify-center space-x-3 focus:outline-none">
+                    <i class="fas fa-desktop text-lg"></i>
+                    <span>Masuk sebagai Admin HR</span>
+                </button>
+            </div>
+
+            <!-- Form Login Admin (Hidden by default) -->
+            <div id="admin-login-form" class="hidden space-y-4">
+                <p class="text-sm text-gray-600 mb-2 font-medium">Otorisasi Admin HR</p>
+                <div class="relative">
+                    <i class="fas fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <input type="password" id="admin-password" placeholder="Masukkan kata sandi..." class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" onkeypress="if(event.key === 'Enter') verifyAdminLogin()">
+                </div>
+                <button onclick="verifyAdminLogin()" class="w-full py-3.5 bg-gray-800 text-white rounded-xl font-semibold shadow-lg shadow-gray-800/30 hover:bg-gray-900 transition flex items-center justify-center space-x-2">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span>Masuk Dashboard</span>
+                </button>
+                <button onclick="hideAdminLoginForm()" class="w-full py-2 text-gray-500 hover:text-gray-700 text-sm font-medium transition focus:outline-none">
+                    Kembali
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Container Utama (Desain Mobile-First) - KARYAWAN -->
+    <div id="view-employee" class="hidden w-full max-w-md bg-slate-50 min-h-screen shadow-[0_0_40px_rgba(0,0,0,0.05)] relative mx-auto flex-col overflow-hidden">
+        
+        <!-- Header Profil -->
+        <header class="bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white p-6 rounded-b-[2.5rem] shadow-lg z-10 relative overflow-hidden">
+            <!-- Decorative circles -->
+            <div class="absolute top-[-20%] right-[-10%] w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+            <div class="absolute bottom-[-10%] left-[-10%] w-24 h-24 bg-white/10 rounded-full blur-xl"></div>
+            
+            <div class="flex justify-between items-center mb-5 relative z-10">
+                <div>
+                    <h1 class="text-xl font-bold"><span id="greeting-text">Halo</span>, Karyawan Demo</h1>
+                    <p class="text-sm text-blue-200">Staff Umum</p>
+                </div>
+                <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center text-blue-600 font-bold text-xl shadow-inner overflow-hidden relative">
+                    <span id="header-profile-initials">KD</span>
+                    <img id="header-profile-img" src="" class="hidden w-full h-full object-cover absolute inset-0 z-10">
+                </div>
+            </div>
+            
+            <!-- Info Tanggal Hari Ini -->
+            <div class="bg-white/20 rounded-2xl p-3.5 flex items-center justify-between backdrop-blur-sm mt-4 relative z-10 border border-white/20 shadow-sm">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fas fa-calendar-alt text-blue-100"></i>
+                    <span id="current-date" class="text-sm font-medium">Memuat tanggal...</span>
+                </div>
+                <div class="text-xs bg-white/90 text-indigo-700 px-3 py-1.5 rounded-full font-bold shadow-sm">
+                    Reguler
+                </div>
+            </div>
+        </header>
+
+        <!-- Konten Utama (Berubah sesuai Tab) -->
+        <main class="flex-1 overflow-y-auto pb-24 px-5 pt-6 relative" id="main-content">
+            
+            <!-- SECTION 1: BERANDA -->
+            <div id="section-home" class="block animate-fade-in">
+                
+                <!-- Banner Pengumuman -->
+                <div id="employee-announcement-container">
+                    <!-- Data pengumuman akan dimuat lewat JavaScript dari Admin -->
+                </div>
+
+                <!-- Menu Layanan Karyawan -->
+                <div class="mb-2">
+                    <h3 class="text-sm font-bold text-gray-800 mb-5 pl-1">Layanan Karyawan</h3>
+                    <div class="grid grid-cols-4 gap-y-6 gap-x-2">
+                        <!-- Cuti -->
+                        <button onclick="openFeature('cuti')" class="flex flex-col items-center justify-start gap-2.5 focus:outline-none group">
+                            <div class="w-14 h-14 bg-white text-indigo-500 rounded-2xl flex items-center justify-center text-2xl shadow-[0_4px_10px_rgba(0,0,0,0.03)] border border-gray-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_8px_15px_rgba(99,102,241,0.15)] group-active:scale-95">
+                                <i class="fas fa-calendar-minus"></i>
+                            </div>
+                            <span class="text-[11px] font-medium text-gray-600 text-center leading-tight group-hover:text-indigo-600 transition-colors">Cuti</span>
+                        </button>
+                        
+                        <!-- Lembur -->
+                        <button onclick="openFeature('lembur')" class="flex flex-col items-center justify-start gap-2.5 focus:outline-none group">
+                            <div class="w-14 h-14 bg-white text-orange-500 rounded-2xl flex items-center justify-center text-2xl shadow-[0_4px_10px_rgba(0,0,0,0.03)] border border-gray-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_8px_15px_rgba(249,115,22,0.15)] group-active:scale-95">
+                                <i class="fas fa-business-time"></i>
+                            </div>
+                            <span class="text-[11px] font-medium text-gray-600 text-center leading-tight group-hover:text-orange-500 transition-colors">Lembur</span>
+                        </button>
+
+                        <!-- Kehadiran Manual -->
+                        <button onclick="openFeature('manual')" class="flex flex-col items-center justify-start gap-2.5 focus:outline-none group">
+                            <div class="w-14 h-14 bg-white text-teal-500 rounded-2xl flex items-center justify-center text-2xl shadow-[0_4px_10px_rgba(0,0,0,0.03)] border border-gray-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_8px_15px_rgba(20,184,166,0.15)] group-active:scale-95">
+                                <i class="fas fa-clipboard-check"></i>
+                            </div>
+                            <span class="text-[11px] font-medium text-gray-600 text-center leading-tight group-hover:text-teal-500 transition-colors">Kehadiran<br>Manual</span>
+                        </button>
+
+                        <!-- Kasbon -->
+                        <button onclick="openFeature('kasbon')" class="flex flex-col items-center justify-start gap-2.5 focus:outline-none group">
+                            <div class="w-14 h-14 bg-white text-green-500 rounded-2xl flex items-center justify-center text-2xl shadow-[0_4px_10px_rgba(0,0,0,0.03)] border border-gray-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_8px_15px_rgba(34,197,94,0.15)] group-active:scale-95">
+                                <i class="fas fa-hand-holding-usd"></i>
+                            </div>
+                            <span class="text-[11px] font-medium text-gray-600 text-center leading-tight group-hover:text-green-500 transition-colors">Kasbon</span>
+                        </button>
+
+                        <!-- Reimburse -->
+                        <button onclick="openFeature('reimburse')" class="flex flex-col items-center justify-start gap-2.5 focus:outline-none group">
+                            <div class="w-14 h-14 bg-white text-blue-500 rounded-2xl flex items-center justify-center text-2xl shadow-[0_4px_10px_rgba(0,0,0,0.03)] border border-gray-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_8px_15px_rgba(59,130,246,0.15)] group-active:scale-95">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                            </div>
+                            <span class="text-[11px] font-medium text-gray-600 text-center leading-tight group-hover:text-blue-500 transition-colors">Reimburse</span>
+                        </button>
+
+                        <!-- Kalender -->
+                        <button onclick="openFeature('kalender')" class="flex flex-col items-center justify-start gap-2.5 focus:outline-none group">
+                            <div class="w-14 h-14 bg-white text-rose-500 rounded-2xl flex items-center justify-center text-2xl shadow-[0_4px_10px_rgba(0,0,0,0.03)] border border-gray-100 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_8px_15px_rgba(244,63,94,0.15)] group-active:scale-95">
+                                <i class="fas fa-calendar-day"></i>
+                            </div>
+                            <span class="text-[11px] font-medium text-gray-600 text-center leading-tight group-hover:text-rose-500 transition-colors">Kalender</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: KEHADIRAN (BARU) -->
+            <div id="section-kehadiran" class="hidden animate-fade-in">
+                <!-- Jam Digital -->
+                <div class="text-center mb-6 bg-white p-5 rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-50">
+                    <h2 class="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-1">Waktu Saat Ini</h2>
+                    <div id="digital-clock" class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 tracking-tight mb-2">00:00:00</div>
+                    <div class="flex items-center justify-center space-x-2 text-xs font-medium text-gray-500 bg-gray-50 py-1.5 px-3 rounded-full inline-flex">
+                        <i class="fas fa-map-marker-alt text-red-500"></i>
+                        <span id="employee-location-text">Mencari lokasi GPS...</span>
+                    </div>
+                </div>
+
+                <!-- Peta Lokasi (Live Tracking) -->
+                <div class="mb-6 rounded-3xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-50 relative h-48 bg-gray-100">
+                    <div id="employee-map" class="w-full h-full z-0"></div>
+                    <!-- Overlay Info -->
+                    <div class="absolute bottom-3 left-3 right-3 bg-white/90 backdrop-blur-sm p-3 rounded-2xl shadow-sm z-10 flex items-center justify-between border border-white/50">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
+                                <i class="fas fa-location-arrow"></i>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Akurasi GPS</p>
+                                <p id="gps-accuracy" class="text-xs font-bold text-gray-800">Menghitung...</p>
+                            </div>
+                        </div>
+                        <div id="geofence-status" class="px-3 py-1 bg-yellow-50 text-yellow-600 text-[10px] font-bold rounded-full border border-yellow-100 flex items-center">
+                            <i class="fas fa-spinner fa-spin mr-1"></i> Memeriksa Area
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Card -->
+                <div class="bg-white rounded-3xl p-1 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-gray-50 mb-10">
+                    <div class="flex justify-between items-center bg-gray-50/50 rounded-2xl p-4">
+                        <div class="text-center flex-1 border-r border-gray-200/60">
+                            <p class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-1">Jam Masuk</p>
+                            <p id="status-time-in" class="text-xl font-bold text-gray-800">--:--</p>
+                        </div>
+                        <div class="text-center flex-1">
+                            <p class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-1">Jam Pulang</p>
+                            <p id="status-time-out" class="text-xl font-bold text-gray-800">--:--</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tombol Absen -->
+                <div class="flex justify-center items-center mb-6 relative">
+                    <!-- Tombol Masuk -->
+                    <button id="btn-masuk" onclick="openCamera('masuk')" class="w-40 h-40 bg-gradient-to-tr from-blue-500 to-blue-600 rounded-full text-white shadow-xl flex flex-col items-center justify-center pulse-btn transition-transform active:scale-95">
+                        <i class="fas fa-camera text-4xl mb-2"></i>
+                        <span class="font-bold text-lg">Absen Masuk</span>
+                    </button>
+
+                    <!-- Tombol Pulang (Awalnya Sembunyi) -->
+                    <button id="btn-pulang" onclick="openCamera('pulang')" class="hidden w-40 h-40 bg-gradient-to-tr from-orange-400 to-red-500 rounded-full text-white shadow-xl flex flex-col items-center justify-center transition-transform active:scale-95">
+                        <i class="fas fa-camera text-4xl mb-2"></i>
+                        <span class="font-bold text-lg">Absen Pulang</span>
+                    </button>
+
+                    <!-- Status Selesai (Awalnya Sembunyi) -->
+                    <div id="status-selesai" class="hidden w-40 h-40 bg-gray-100 border-4 border-green-500 rounded-full text-green-600 shadow-inner flex flex-col items-center justify-center">
+                        <i class="fas fa-check-circle text-4xl mb-2"></i>
+                        <span class="font-bold text-sm text-center">Tugas Hari Ini<br>Selesai</span>
+                    </div>
+                </div>
+
+                <p id="absen-message" class="text-center text-sm text-gray-500">Silakan tekan tombol di atas untuk absen.</p>
+            </div>
+
+            <!-- SECTION 3: RIWAYAT -->
+            <div id="section-history" class="hidden">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">Riwayat Absensi (Bulan Ini)</h2>
+                
+                <!-- Filter Singkat -->
+                <div class="flex space-x-2 mb-4 overflow-x-auto pb-1" id="history-filters">
+                    <button onclick="filterHistory('semua')" id="filter-semua" class="bg-blue-600 text-white border border-blue-600 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shadow-sm transition-colors">Semua</button>
+                    <button onclick="filterHistory('hadir')" id="filter-hadir" class="bg-white border border-gray-200 text-gray-600 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap hover:bg-gray-50 transition-colors">Hadir</button>
+                    <button onclick="filterHistory('terlambat')" id="filter-terlambat" class="bg-white border border-gray-200 text-gray-600 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap hover:bg-gray-50 transition-colors">Terlambat</button>
+                </div>
+
+                <!-- Daftar Riwayat -->
+                <div id="history-list" class="space-y-3">
+                    <!-- Item riwayat akan digenerate oleh JavaScript -->
+                </div>
+            </div>
+
+            <!-- SECTION 4: PROFIL -->
+            <div id="section-profile" class="hidden animate-fade-in">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">Profil Saya</h2>
+                
+                <!-- Kartu Info Utama -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 text-center mb-5">
+                    <div class="w-24 h-24 bg-blue-100 mx-auto rounded-full flex items-center justify-center text-blue-600 font-bold text-4xl mb-3 relative cursor-pointer group" onclick="document.getElementById('profile-upload').click()" title="Klik untuk ubah foto">
+                        <span id="profile-initials">KD</span>
+                        <img id="profile-img" src="" class="hidden w-full h-full rounded-full object-cover shadow-sm border-2 border-white">
+                        
+                        <!-- Overlay kamera saat hover -->
+                        <div class="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fas fa-camera text-white text-xl"></i>
+                        </div>
+                        
+                        <!-- Indikator Status Aktif -->
+                        <div class="absolute bottom-1 right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full z-10"></div>
+                    </div>
+                    <!-- Input File Tersembunyi -->
+                    <input type="file" id="profile-upload" accept="image/*" class="hidden" onchange="handleProfileUpload(event)">
+                    <p class="text-[10px] text-gray-400 mb-2 mt(-2)">Maks. 10MB</p>
+
+                    <h3 class="font-bold text-lg text-gray-800">Karyawan Demo</h3>
+                    <p class="text-gray-500 text-sm mb-4">NIK: 2026000001</p>
+                    
+                    <div class="grid grid-cols-2 gap-3 text-left">
+                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                            <p class="text-[11px] text-gray-500 mb-0.5">Departemen</p>
+                            <p class="font-medium text-sm text-gray-800">Umum</p>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                            <p class="text-[11px] text-gray-500 mb-0.5">Jabatan</p>
+                            <p class="font-medium text-sm text-gray-800">Staff</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Daftar Menu Profil Tambahan -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+                    
+                    <!-- Info Pribadi -->
+                    <button onclick="openFeature('info-pribadi')" class="w-full flex items-center justify-between p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors focus:outline-none">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <span class="text-sm font-medium text-gray-700">Info Pribadi</span>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </button>
+                    
+                    <!-- Info Pekerjaan -->
+                    <button onclick="openFeature('info-pekerjaan')" class="w-full flex items-center justify-between p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors focus:outline-none">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                                <i class="fas fa-briefcase"></i>
+                            </div>
+                            <span class="text-sm font-medium text-gray-700">Info Pekerjaan</span>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </button>
+
+                    <!-- Info Kontak Darurat -->
+                    <button onclick="openFeature('kontak-darurat')" class="w-full flex items-center justify-between p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors focus:outline-none">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
+                                <i class="fas fa-heartbeat"></i>
+                            </div>
+                            <span class="text-sm font-medium text-gray-700">Info Kontak Darurat</span>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </button>
+
+                    <!-- Slip Gaji -->
+                    <button onclick="openFeature('slip-gaji')" class="w-full flex items-center justify-between p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors focus:outline-none">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-green-50 text-green-600 flex items-center justify-center">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                            </div>
+                            <span class="text-sm font-medium text-gray-700">Slip Gaji</span>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </button>
+
+                    <!-- Pengaturan -->
+                    <button onclick="openFeature('pengaturan')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors focus:outline-none">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center">
+                                <i class="fas fa-cog"></i>
+                            </div>
+                            <span class="text-sm font-medium text-gray-700">Pengaturan</span>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </button>
+
+                </div>
+                
+                <!-- Tombol Keluar -->
+                <button onclick="logout()" class="w-full py-3.5 text-red-500 bg-white border border-red-100 shadow-sm rounded-xl font-semibold hover:bg-red-50 transition flex items-center justify-center space-x-2 focus:outline-none mb-2">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Kembali ke Menu Utama</span>
+                </button>
+            </div>
+
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="bg-white/90 backdrop-blur-md border-t border-gray-100 absolute bottom-0 w-full flex justify-around items-center h-20 pb-safe rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-40">
+            <button onclick="switchTab('home')" id="tab-home" class="nav-btn flex flex-col items-center justify-center w-full h-full text-blue-600 transition-all duration-300 relative group">
+                <div class="icon-container transform transition-transform duration-300 scale-110 mb-1 relative">
+                    <i class="fas fa-home text-xl"></i>
+                    <span class="active-dot absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full"></span>
+                </div>
+                <span class="text-[10px] font-semibold transition-all duration-300 opacity-100">Beranda</span>
+            </button>
+            <button onclick="switchTab('kehadiran')" id="tab-kehadiran" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-blue-500 transition-all duration-300 relative group">
+                <div class="icon-container transform transition-transform duration-300 mb-1 relative">
+                    <i class="fas fa-fingerprint text-xl"></i>
+                    <span class="active-dot absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full opacity-0"></span>
+                </div>
+                <span class="text-[10px] font-medium transition-all duration-300 opacity-70 group-hover:opacity-100">Kehadiran</span>
+            </button>
+            <button onclick="switchTab('history')" id="tab-history" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-blue-500 transition-all duration-300 relative group">
+                <div class="icon-container transform transition-transform duration-300 mb-1 relative">
+                    <i class="fas fa-clipboard-list text-xl"></i>
+                    <span class="active-dot absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full opacity-0"></span>
+                </div>
+                <span class="text-[10px] font-medium transition-all duration-300 opacity-70 group-hover:opacity-100">Riwayat</span>
+            </button>
+            <button onclick="switchTab('profile')" id="tab-profile" class="nav-btn flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-blue-500 transition-all duration-300 relative group">
+                <div class="icon-container transform transition-transform duration-300 mb-1 relative">
+                    <i class="fas fa-user text-xl"></i>
+                    <span class="active-dot absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full opacity-0"></span>
+                </div>
+                <span class="text-[10px] font-medium transition-all duration-300 opacity-70 group-hover:opacity-100">Profil</span>
+            </button>
+        </nav>
+
+        <!-- FITUR LAYANAN KARYAWAN (OVERLAYS) -->
+        
+        <!-- Kalender Karyawan -->
+        <div id="feature-kalender" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('kalender')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Kalender Perusahaan</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                
+                <!-- Grid Kalender -->
+                <div class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 mb-6">
+                    <!-- Bulan Navigation -->
+                    <div class="flex justify-between items-center mb-6">
+                        <button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"><i class="fas fa-chevron-left"></i></button>
+                        <h3 class="font-bold text-gray-800 text-lg" id="calendar-month-year">Maret 2026</h3>
+                        <button class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    
+                    <!-- Nama Hari -->
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">
+                        <div class="text-red-500">Min</div><div>Sen</div><div>Sel</div><div>Rab</div><div>Kam</div><div>Jum</div><div>Sab</div>
+                    </div>
+                    
+                    <!-- Tanggal (Simulasi Statis) -->
+                    <div class="grid grid-cols-7 gap-y-3 gap-x-1 text-center text-sm font-medium text-gray-700" id="calendar-grid">
+                        <div class="py-2 text-gray-300">1</div><div class="py-2 text-gray-300">2</div><div class="py-2">3</div><div class="py-2">4</div><div class="py-2">5</div><div class="py-2">6</div><div class="py-2">7</div>
+                        <div class="py-2 text-red-500">8</div><div class="py-2">9</div><div class="py-2 relative">10<span class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-yellow-500 rounded-full"></span></div><div class="py-2">11</div><div class="py-2">12</div><div class="py-2">13</div><div class="py-2">14</div>
+                        <div class="py-2 text-red-500">15</div><div class="py-2">16</div><div class="py-2">17</div><div class="py-2 bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/30 font-bold">18</div><div class="py-2">19</div><div class="py-2 relative">20<span class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-green-500 rounded-full"></span></div><div class="py-2">21</div>
+                        <div class="py-2 text-red-500 relative">22</div><div class="py-2">23</div><div class="py-2">24</div><div class="py-2">25</div><div class="py-2 relative text-rose-600 font-bold bg-rose-50 rounded-xl">26<span class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-rose-500 rounded-full"></span></div><div class="py-2 text-rose-600 font-bold bg-rose-50 rounded-xl">27</div><div class="py-2">28</div>
+                        <div class="py-2 text-red-500">29</div><div class="py-2">30</div><div class="py-2">31</div><div></div><div></div><div></div><div></div>
+                    </div>
+                </div>
+
+                <!-- Agenda / Keterangan -->
+                <div>
+                    <h4 class="font-bold text-sm text-gray-800 mb-3 ml-1">Agenda Mendatang</h4>
+                    <div class="space-y-3">
+                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 transition-all hover:-translate-y-1 hover:shadow-md">
+                            <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg"><i class="fas fa-calendar-day"></i></div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800">Hari Ini</p>
+                                <p class="text-xs text-gray-500 mt-0.5">18 Maret 2026</p>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 transition-all hover:-translate-y-1 hover:shadow-md">
+                            <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center text-lg"><i class="fas fa-umbrella-beach"></i></div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800">Hari Raya (Libur Nasional)</p>
+                                <p class="text-xs text-gray-500 mt-0.5">26 - 27 Maret 2026</p>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 transition-all hover:-translate-y-1 hover:shadow-md">
+                            <div class="w-10 h-10 rounded-xl bg-green-50 text-green-500 flex items-center justify-center text-lg"><i class="fas fa-birthday-cake"></i></div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800">Ulang Tahun Perusahaan</p>
+                                <p class="text-xs text-gray-500 mt-0.5">20 Maret 2026</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Form Cuti -->
+        <div id="feature-cuti" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('cuti')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Pengajuan Cuti</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Jenis Cuti</label>
+                        <select id="cuti-jenis" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            <option>Cuti Tahunan</option>
+                            <option>Cuti Sakit (Dengan Surat Dokter)</option>
+                            <option>Cuti Melahirkan</option>
+                            <option>Cuti Alasan Penting</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Tanggal Mulai</label>
+                            <input id="cuti-mulai" type="date" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Tanggal Selesai</label>
+                            <input id="cuti-selesai" type="date" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Keterangan / Alasan</label>
+                        <textarea id="cuti-alasan" rows="3" placeholder="Tuliskan alasan cuti Anda..." class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none"></textarea>
+                    </div>
+                    <button onclick="submitFeature('cuti', 'Pengajuan cuti Anda berhasil dikirim untuk diproses HR.')" class="w-full mt-4 py-3.5 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-transform active:scale-95">
+                        Kirim Pengajuan Cuti
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Lembur -->
+        <div id="feature-lembur" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('lembur')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Pengajuan Lembur</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Tanggal Lembur</label>
+                        <input id="lembur-tanggal" type="date" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Jam Mulai</label>
+                            <input id="lembur-mulai" type="time" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Jam Selesai</label>
+                            <input id="lembur-selesai" type="time" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Deskripsi Pekerjaan</label>
+                        <textarea id="lembur-deskripsi" rows="3" placeholder="Jelaskan target pekerjaan yang akan diselesaikan..." class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none"></textarea>
+                    </div>
+                    <button onclick="submitFeature('lembur', 'Pengajuan lembur berhasil dikirim ke atasan.')" class="w-full mt-4 py-3.5 bg-orange-500 text-white rounded-xl font-bold shadow-lg shadow-orange-500/30 hover:bg-orange-600 transition-transform active:scale-95">
+                        Ajukan Lembur
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Kehadiran Manual -->
+        <div id="feature-manual" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('manual')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Kehadiran Manual</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-blue-50 border border-blue-100 p-3 rounded-xl mb-4">
+                    <p class="text-xs text-blue-700"><i class="fas fa-info-circle mr-1"></i> Gunakan form ini jika Anda lupa absen atau sistem sedang mengalami kendala jaringan.</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Tanggal Kehadiran</label>
+                        <input id="manual-tanggal" type="date" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Jam Masuk</label>
+                            <input id="manual-masuk" type="time" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Jam Pulang</label>
+                            <input id="manual-pulang" type="time" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Alasan Absen Manual</label>
+                        <textarea id="manual-alasan" rows="2" placeholder="Contoh: HP kehabisan baterai..." class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none"></textarea>
+                    </div>
+                    <button onclick="submitFeature('manual', 'Koreksi kehadiran manual sedang menunggu persetujuan HR.')" class="w-full mt-4 py-3.5 bg-teal-600 text-white rounded-xl font-bold shadow-lg shadow-teal-500/30 hover:bg-teal-700 transition-transform active:scale-95">
+                        Simpan Kehadiran Manual
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Kasbon -->
+        <div id="feature-kasbon" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('kasbon')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Pengajuan Kasbon</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nominal Pinjaman (Rp)</label>
+                        <input id="kasbon-nominal" type="number" placeholder="Contoh: 1500000" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Rencana Pengembalian</label>
+                        <select id="kasbon-cicilan" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            <option>Potong Gaji Bulan Ini</option>
+                            <option>Potong Gaji Bulan Depan</option>
+                            <option>Cicil 3 Bulan</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Keperluan Pengajuan</label>
+                        <textarea id="kasbon-keperluan" rows="3" placeholder="Tuliskan alasan pengajuan..." class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none"></textarea>
+                    </div>
+                    <button onclick="submitFeature('kasbon', 'Pengajuan kasbon Anda telah diterima bagian Finance.')" class="w-full mt-4 py-3.5 bg-green-600 text-white rounded-xl font-bold shadow-lg shadow-green-500/30 hover:bg-green-700 transition-transform active:scale-95">
+                        Ajukan Kasbon
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Reimburse -->
+        <div id="feature-reimburse" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('reimburse')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Klaim Reimburse</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Kategori Reimburse</label>
+                        <select id="reimburse-kategori" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            <option>Biaya Transportasi & Bensin</option>
+                            <option>Biaya Makan / Entertaining</option>
+                            <option>Kesehatan & Medis</option>
+                            <option>Lain-lain</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nominal Biaya (Rp)</label>
+                        <input id="reimburse-nominal" type="number" placeholder="0" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Unggah Bukti / Struk</label>
+                        <div class="w-full px-4 py-6 border-2 border-dashed border-gray-300 bg-gray-50 rounded-xl text-center cursor-pointer hover:bg-gray-100 transition-colors">
+                            <i class="fas fa-cloud-upload-alt text-2xl text-blue-500 mb-2"></i>
+                            <p class="text-xs text-gray-500">Klik untuk unggah foto nota/struk</p>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Keterangan (Opsional)</label>
+                        <input id="reimburse-keterangan" type="text" placeholder="Misal: Bertemu klien A..." class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                    </div>
+                    <button onclick="submitFeature('reimburse', 'Data reimburse berhasil dikirim untuk diproses.')" class="w-full mt-4 py-3.5 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-transform active:scale-95">
+                        Kirim Klaim Reimburse
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- FITUR PROFIL KARYAWAN (OVERLAYS) -->
+
+        <!-- Info Pribadi -->
+        <div id="feature-info-pribadi" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('info-pribadi')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Informasi Pribadi</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nama Lengkap</label>
+                        <input type="text" value="Karyawan Demo" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Email Pribadi</label>
+                        <input type="email" value="karyawan@perusahaan.com" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nomor Handphone</label>
+                        <input type="tel" value="081200000000" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Alamat Tempat Tinggal</label>
+                        <textarea rows="3" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-none">Jl. Jendral Sudirman No.1, Jakarta</textarea>
+                    </div>
+                    <button onclick="saveProfileFeature('info-pribadi')" class="w-full mt-4 py-3.5 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-transform active:scale-95">
+                        Simpan Perubahan
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Pekerjaan -->
+        <div id="feature-info-pekerjaan" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('info-pekerjaan')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Detail Pekerjaan</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-blue-50 border border-blue-100 p-3 rounded-xl mb-4">
+                    <p class="text-xs text-blue-700"><i class="fas fa-lock mr-1"></i> Informasi ini hanya dapat diubah oleh pihak HR Admin.</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Nomor Induk Karyawan (NIK)</label>
+                        <p class="text-sm font-bold text-gray-800">2026032012</p>
+                    </div>
+                    <div class="h-px bg-gray-100 w-full"></div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Departemen</label>
+                        <p class="text-sm font-bold text-gray-800">IT Development</p>
+                    </div>
+                    <div class="h-px bg-gray-100 w-full"></div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Jabatan / Posisi</label>
+                        <p class="text-sm font-bold text-gray-800">Software Engineer</p>
+                    </div>
+                    <div class="h-px bg-gray-100 w-full"></div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Status Karyawan</label>
+                        <p class="text-sm font-bold text-gray-800"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">Karyawan Tetap (PKWTT)</span></p>
+                    </div>
+                    <div class="h-px bg-gray-100 w-full"></div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Tanggal Bergabung</label>
+                        <p class="text-sm font-bold text-gray-800">01 Agustus 2022</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kontak Darurat -->
+        <div id="feature-kontak-darurat" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('kontak-darurat')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Kontak Darurat</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nama Kontak Darurat</label>
+                        <input type="text" value="Siti Rahmawati" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Hubungan Keluarga</label>
+                        <select class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                            <option>Istri / Suami</option>
+                            <option>Orang Tua</option>
+                            <option>Saudara Kandung</option>
+                            <option>Lainnya</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nomor Handphone</label>
+                        <input type="tel" value="085612349876" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    </div>
+                    <button onclick="saveProfileFeature('kontak-darurat')" class="w-full mt-4 py-3.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30 hover:bg-red-600 transition-transform active:scale-95">
+                        Simpan Kontak Darurat
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slip Gaji (Pengguna / Karyawan) -->
+        <div id="feature-slip-gaji" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('slip-gaji')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Slip Gaji Bulanan</h2>
+            </div>
+            <!-- Daftar Slip Gaji (Dirender via JS berdasarkan data dari Admin) -->
+            <div id="employee-payslip-list" class="flex-1 overflow-y-auto p-5 space-y-3">
+                <!-- Dirender via JavaScript -->
+            </div>
+        </div>
+
+        <!-- Pengaturan -->
+        <div id="feature-pengaturan" class="hidden absolute inset-0 bg-gray-50 z-[60] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('pengaturan')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Pengaturan Aplikasi</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 space-y-6">
+                
+                <!-- Grup Preferensi -->
+                <div>
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Preferensi Aplikasi</h3>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="p-4 border-b border-gray-50 flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <i class="fas fa-bell text-gray-400 w-5 text-center"></i>
+                                <span class="text-sm font-medium text-gray-700">Notifikasi Push</span>
+                            </div>
+                            <input type="checkbox" checked class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2">
+                        </div>
+                        <div class="p-4 flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <i class="fas fa-map-marker-alt text-gray-400 w-5 text-center"></i>
+                                <span class="text-sm font-medium text-gray-700">Akses Lokasi Aktif</span>
+                            </div>
+                            <input type="checkbox" checked class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grup Akun & Keamanan -->
+                <div>
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Info Aplikasi</h3>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <button onclick="showToast('Sesi aktif saat ini: 1 Perangkat (Browser Chrome)', 'success')" class="w-full flex items-center justify-between p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors focus:outline-none">
+                            <div class="flex items-center space-x-3">
+                                <i class="fas fa-shield-alt text-gray-400 w-5 text-center"></i>
+                                <span class="text-sm font-medium text-gray-700">Perangkat Terhubung</span>
+                            </div>
+                            <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                        </button>
+                        <button onclick="openFeature('tentang-aplikasi')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors focus:outline-none">
+                            <div class="flex items-center space-x-3">
+                                <i class="fas fa-info-circle text-gray-400 w-5 text-center"></i>
+                                <span class="text-sm font-medium text-gray-700">Tentang Aplikasi</span>
+                            </div>
+                            <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tentang Aplikasi -->
+        <div id="feature-tentang-aplikasi" class="hidden absolute inset-0 bg-gray-50 z-[70] flex-col animate-fade-in overflow-hidden">
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm z-10 flex-shrink-0">
+                <button onclick="closeFeature('tentang-aplikasi')" class="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="text-lg font-bold text-gray-800 ml-2">Tentang Aplikasi</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 flex flex-col items-center">
+                <div class="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-3xl flex items-center justify-center shadow-lg mb-4 mt-8">
+                    <i class="fas fa-fingerprint text-white text-5xl"></i>
+                </div>
+                <h3 class="text-2xl font-bold text-gray-800">Face Works</h3>
+                <p class="text-sm text-gray-500 mb-6">Versi 1.0.0</p>
+                
+                <div class="bg-white w-full rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+                    <p class="text-sm text-gray-600 leading-relaxed text-center">
+                        Face Works adalah aplikasi pengenalan wajah modern yang dirancang untuk mempermudah proses absensi, verifikasi identitas, dan pemantauan kehadiran secara real-time.
+                    </p>
+                    <div class="h-px bg-gray-100 w-full"></div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-gray-500">Pengembang</span>
+                        <span class="text-xs font-bold text-gray-800">DOM Team</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-gray-500">Pembaruan Terakhir</span>
+                        <span class="text-xs font-bold text-gray-800">Maret 2026</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-gray-500">Lisensi</span>
+                        <span class="text-xs font-bold text-gray-800">&copy; 2026 DOM Project</span>
+                    </div>
+                </div>
+                
+                <div class="mt-auto pt-8 w-full pb-6">
+                    <button onclick="showToast('Sistem Anda sudah dalam versi terbaru!', 'success')" class="w-full py-3.5 bg-blue-50 text-blue-600 rounded-xl font-semibold hover:bg-blue-100 transition focus:outline-none">
+                        Periksa Pembaruan
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL KAMERA (UNTUK SELFIE) -->
+        <div id="camera-modal" class="fixed inset-0 bg-black/90 z-[100] hidden flex-col items-center justify-center">
+            <div class="relative w-full max-w-sm px-4">
+                <h3 class="text-white text-center font-bold mb-4" id="camera-title">Ambil Foto Selfie</h3>
+                <div class="rounded-2xl overflow-hidden bg-gray-800 aspect-[3/4] relative shadow-2xl border-4 border-gray-700">
+                    <video id="camera-video" class="w-full h-full object-cover scale-x-[-1]" autoplay playsinline></video>
+                    <!-- Guideline Wajah -->
+                    <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+                        <div class="w-48 h-64 border-2 border-dashed border-white/50 rounded-full"></div>
+                    </div>
+                    <canvas id="camera-canvas" class="hidden"></canvas>
+                </div>
+                <div class="flex justify-between mt-6 space-x-4">
+                    <button onclick="closeCamera()" class="flex-1 py-3 bg-gray-700 text-white rounded-xl font-medium hover:bg-gray-600 transition">Batal</button>
+                    <button onclick="takePhotoAndAbsen()" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-medium flex items-center justify-center space-x-2 hover:bg-blue-500 transition shadow-lg shadow-blue-500/30">
+                        <i class="fas fa-camera"></i>
+                        <span>Ambil Foto</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Container untuk Toast Notifications -->
+        <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-50 flex flex-col space-y-2 w-11/12 max-w-sm"></div>
+
+    </div> <!-- PENUTUP VIEW EMPLOYEE -->
+
+    <!-- VIEW: ADMIN DASHBOARD (DESKTOP LAYOUT) -->
+    <div id="view-admin" class="hidden w-full h-screen bg-gray-50 flex overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-gray-900 text-white flex flex-col transition-all">
+            <div class="h-16 flex items-center px-6 border-b border-gray-800 space-x-3">
+                <i class="fas fa-fingerprint text-blue-500 text-2xl"></i>
+                <span class="text-lg font-bold tracking-wide">Face Work Admin</span>
+            </div>
+            <nav class="flex-1 py-6 px-3 space-y-2 overflow-y-auto" id="admin-sidebar-nav">
+                <a href="#" id="nav-admin-dashboard" onclick="switchAdminMenu('dashboard')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/20">
+                    <i class="fas fa-chart-pie w-5"></i>
+                    <span class="font-medium text-sm">Dashboard</span>
+                </a>
+                <a href="#" id="nav-admin-karyawan" onclick="switchAdminMenu('karyawan')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                    <i class="fas fa-users w-5"></i>
+                    <span class="font-medium text-sm">Data Karyawan</span>
+                </a>
+                <a href="#" id="nav-admin-laporan" onclick="switchAdminMenu('laporan')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                    <i class="fas fa-file-alt w-5"></i>
+                    <span class="font-medium text-sm">Laporan</span>
+                </a>
+                <a href="#" id="nav-admin-slipgaji" onclick="switchAdminMenu('slipgaji')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                    <i class="fas fa-money-check-alt w-5"></i>
+                    <span class="font-medium text-sm">Upload Slip Gaji</span>
+                </a>
+                <a href="#" id="nav-admin-download" onclick="switchAdminMenu('download')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                    <i class="fas fa-download w-5"></i>
+                    <span class="font-medium text-sm">Download</span>
+                </a>
+                <a href="#" id="nav-admin-lokasi" onclick="switchAdminMenu('lokasi')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                    <i class="fas fa-map-marked-alt w-5"></i>
+                    <span class="font-medium text-sm">Lokasi Kerja</span>
+                </a>
+                <a href="#" id="nav-admin-pengumuman" onclick="switchAdminMenu('pengumuman')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                    <i class="fas fa-bullhorn w-5"></i>
+                    <span class="font-medium text-sm">Pengumuman</span>
+                </a>
+                
+                <!-- MENU TAMBAHAN PENGAJUAN -->
+                <div class="pt-4 mt-4 border-t border-gray-800">
+                    <p class="px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Persetujuan</p>
+                    <a href="#" id="nav-admin-cuti" onclick="switchAdminMenu('cuti')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                        <i class="fas fa-calendar-minus w-5"></i>
+                        <span class="font-medium text-sm">Cuti Karyawan</span>
+                    </a>
+                    <a href="#" id="nav-admin-lembur" onclick="switchAdminMenu('lembur')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                        <i class="fas fa-business-time w-5"></i>
+                        <span class="font-medium text-sm">Lembur</span>
+                    </a>
+                    <a href="#" id="nav-admin-manual" onclick="switchAdminMenu('manual')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                        <i class="fas fa-clipboard-check w-5"></i>
+                        <span class="font-medium text-sm">Absen Manual</span>
+                    </a>
+                    <a href="#" id="nav-admin-kasbon" onclick="switchAdminMenu('kasbon')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                        <i class="fas fa-hand-holding-usd w-5"></i>
+                        <span class="font-medium text-sm">Kasbon</span>
+                    </a>
+                    <a href="#" id="nav-admin-reimburse" onclick="switchAdminMenu('reimburse')" class="admin-nav-item flex items-center space-x-3 px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white rounded-xl transition-colors">
+                        <i class="fas fa-file-invoice-dollar w-5"></i>
+                        <span class="font-medium text-sm">Reimburse</span>
+                    </a>
+                </div>
+            </nav>
+            <div class="p-4 border-t border-gray-800">
+                <button onclick="logout()" class="flex items-center space-x-3 px-4 py-3 w-full text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-colors">
+                    <i class="fas fa-sign-out-alt w-5"></i>
+                    <span class="font-medium text-sm">Kembali ke Menu Utama</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Admin Content -->
+        <main class="flex-1 flex flex-col h-screen overflow-hidden">
+            <!-- Top Header -->
+            <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shadow-sm z-10">
+                <h2 class="text-lg font-bold text-gray-800">Ringkasan Hari Ini</h2>
+                <div class="flex items-center space-x-4">
+                    <span id="admin-date" class="text-sm text-gray-500 font-medium">Memuat Tanggal...</span>
+                    <div class="w-8 h-8 bg-gray-200 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-gray-600 font-bold text-xs">AD</div>
+                </div>
+            </header>
+
+            <!-- Dashboard Content -->
+            <div class="flex-1 overflow-y-auto p-8 bg-gray-50 relative">
+                
+                <!-- SECTION: DASHBOARD -->
+                <div id="admin-section-dashboard" class="admin-content-section block animate-fade-in">
+                    <!-- Stats Grid -->
+                    <div class="grid grid-cols-4 gap-6 mb-8">
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 hover:-translate-y-1 hover:shadow-md transition-all duration-300">
+                            <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-xl"><i class="fas fa-users"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 font-medium">Total Karyawan</p>
+                                <p class="text-2xl font-bold text-gray-800">124</p>
+                            </div>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 hover:-translate-y-1 hover:shadow-md transition-all duration-300">
+                            <div class="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center text-xl"><i class="fas fa-user-check"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 font-medium">Hadir Hari Ini</p>
+                                <p id="stat-hadir" class="text-2xl font-bold text-gray-800">0</p>
+                            </div>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 hover:-translate-y-1 hover:shadow-md transition-all duration-300">
+                            <div class="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center text-xl"><i class="fas fa-user-clock"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 font-medium">Terlambat</p>
+                                <p id="stat-telat" class="text-2xl font-bold text-gray-800">0</p>
+                            </div>
+                        </div>
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 hover:-translate-y-1 hover:shadow-md transition-all duration-300">
+                            <div class="w-12 h-12 bg-yellow-50 text-yellow-600 rounded-full flex items-center justify-center text-xl"><i class="fas fa-user-minus"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 font-medium">Sakit / Izin</p>
+                                <p class="text-2xl font-bold text-gray-800">3</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Table Data Kehadiran -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+                            <h3 class="font-bold text-gray-800 flex items-center">
+                                <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse mr-2.5 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
+                                Aktivitas Kehadiran Real-time
+                            </h3>
+                            <button id="btn-refresh-dash" onclick="refreshDashboard()" class="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors flex items-center px-3 py-1.5 rounded-lg hover:bg-blue-50">
+                                <i class="fas fa-sync-alt mr-2 transition-transform duration-500" id="icon-refresh-dash"></i> 
+                                <span>Segarkan Data</span>
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto min-h-[250px]">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50/80 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-4 px-6 font-semibold">Info Karyawan</th>
+                                        <th class="py-4 px-6 font-semibold">Tanggal</th>
+                                        <th class="py-4 px-6 font-semibold">Absen Masuk</th>
+                                        <th class="py-4 px-6 font-semibold">Absen Pulang</th>
+                                        <th class="py-4 px-6 font-semibold">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-body" class="divide-y divide-gray-100">
+                                    <!-- Data digenerate oleh JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: DATA KARYAWAN -->
+                <div id="admin-section-karyawan" class="admin-content-section hidden animate-fade-in">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold text-gray-800">Manajemen Karyawan</h2>
+                        <button onclick="openModalKaryawan()" class="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-sm hover:bg-blue-700 transition font-medium text-sm flex items-center space-x-2">
+                            <i class="fas fa-plus"></i>
+                            <span>Tambah Karyawan</span>
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="p-4 border-b border-gray-100 flex gap-4">
+                            <input type="text" placeholder="Cari nama atau NIK..." class="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                            <select class="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                                <option>Semua Departemen</option>
+                                <option>IT Development</option>
+                                <option>HR & General Affair</option>
+                                <option>Finance</option>
+                            </select>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-3 px-6 font-medium">Karyawan & NIK</th>
+                                        <th class="py-3 px-6 font-medium">Kontak (Email/Telp)</th>
+                                        <th class="py-3 px-6 font-medium">Departemen & Jabatan</th>
+                                        <th class="py-3 px-6 font-medium">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-karyawan" class="divide-y divide-gray-100">
+                                    <!-- Data Karyawan akan di-render di sini oleh JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: LAPORAN -->
+                <div id="admin-section-laporan" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Laporan Absensi Bulanan</h2>
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6 flex flex-wrap gap-4 items-end">
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Periode Awal</label>
+                            <input type="date" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Periode Akhir</label>
+                            <input type="date" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                        </div>
+                        <button onclick="showToast('Data laporan berhasil dimuat ulang', 'success')" class="px-6 py-2 bg-gray-800 text-white rounded-lg shadow-sm hover:bg-gray-900 transition font-medium text-sm">
+                            Tampilkan Laporan
+                        </button>
+                    </div>
+                    <div class="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center text-center">
+                        <div class="w-20 h-20 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-3xl mb-4">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-800">Grafik Laporan Siap</h3>
+                        <p class="text-gray-500 text-sm mt-2 max-w-md">Silakan tentukan periode tanggal pada filter di atas untuk menampilkan chart analitik kehadiran, keterlambatan, dan cuti karyawan.</p>
+                    </div>
+                </div>
+
+                <!-- SECTION: SLIP GAJI -->
+                <div id="admin-section-slipgaji" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Manajemen & Upload Slip Gaji</h2>
+                    <div class="grid grid-cols-3 gap-6">
+                        <!-- Form Upload -->
+                        <div class="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <h3 class="font-bold text-gray-800 mb-4">Upload Slip Baru</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Karyawan Penerima</label>
+                                    <select id="input-slip-emp" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                                        <option value="Karyawan Demo">Karyawan Demo (Demo User)</option>
+                                        <option value="Semua Karyawan">Semua Karyawan (Broadcast / Template)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Periode Bulan</label>
+                                    <input id="input-slip-period" type="month" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">File Dokumen (PDF)</label>
+                                    <div class="w-full px-4 py-4 border-2 border-dashed border-gray-300 bg-gray-50 rounded-xl text-center cursor-pointer hover:bg-gray-100 transition-colors relative overflow-hidden">
+                                        <input type="file" id="input-slip-file" accept=".pdf" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="document.getElementById('slip-file-name').innerText = this.files[0]?.name || 'Pilih File PDF'">
+                                        <i class="fas fa-file-pdf text-2xl text-red-500 mb-2"></i>
+                                        <p id="slip-file-name" class="text-xs text-gray-500 font-medium">Klik untuk upload PDF</p>
+                                    </div>
+                                </div>
+                                <button onclick="submitPayslip()" class="w-full py-2.5 bg-green-600 text-white rounded-xl font-semibold shadow-sm hover:bg-green-700 transition flex items-center justify-center space-x-2">
+                                    <i class="fas fa-upload"></i>
+                                    <span>Kirim ke Karyawan</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- List Riwayat Slip -->
+                        <div class="col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                                <h3 class="font-bold text-gray-800">Riwayat Slip Terkirim</h3>
+                            </div>
+                            <div class="overflow-x-auto min-h-[300px]">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                            <th class="py-3 px-6 font-medium">Periode</th>
+                                            <th class="py-3 px-6 font-medium">Penerima</th>
+                                            <th class="py-3 px-6 font-medium">Tanggal Upload</th>
+                                            <th class="py-3 px-6 font-medium">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-table-slip" class="divide-y divide-gray-100">
+                                        <!-- Rendered via JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: DOWNLOAD -->
+                <div id="admin-section-download" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Pusat Unduhan Data</h2>
+                    
+                    <!-- Area Filter Download -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6 flex flex-wrap gap-4 items-end">
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Periode Bulan</label>
+                            <input type="month" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" value="2026-03">
+                        </div>
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Filter Departemen</label>
+                            <select class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                                <option>Semua Departemen</option>
+                                <option>IT Development</option>
+                                <option>HR & General Affair</option>
+                                <option>Finance</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Kartu Download Data -->
+                    <div class="grid grid-cols-3 gap-6">
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-md">
+                            <div class="w-16 h-16 bg-green-50 text-green-500 rounded-full flex items-center justify-center text-3xl mb-4">
+                                <i class="fas fa-file-excel"></i>
+                            </div>
+                            <h3 class="font-bold text-gray-800">Log Kehadiran</h3>
+                            <p class="text-xs text-gray-500 mt-1 mb-6">Format: .xlsx (Berdasarkan filter)</p>
+                            <button onclick="simulateDownload(this, 'Log_Kehadiran_Excel')" class="w-full py-2 bg-green-50 text-green-600 rounded-xl text-sm font-bold hover:bg-green-100 transition flex items-center justify-center space-x-2">
+                                <i class="fas fa-download"></i>
+                                <span>Unduh Excel</span>
+                            </button>
+                        </div>
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-md">
+                            <div class="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-3xl mb-4">
+                                <i class="fas fa-file-csv"></i>
+                            </div>
+                            <h3 class="font-bold text-gray-800">Data Master Karyawan</h3>
+                            <p class="text-xs text-gray-500 mt-1 mb-6">Format: .csv (Semua data aktif)</p>
+                            <button onclick="simulateDownload(this, 'Data_Karyawan_CSV')" class="w-full py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-100 transition flex items-center justify-center space-x-2">
+                                <i class="fas fa-download"></i>
+                                <span>Unduh CSV</span>
+                            </button>
+                        </div>
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center transition-all hover:shadow-md">
+                            <div class="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center text-3xl mb-4">
+                                <i class="fas fa-file-pdf"></i>
+                            </div>
+                            <h3 class="font-bold text-gray-800">Rekapitulasi Bulanan</h3>
+                            <p class="text-xs text-gray-500 mt-1 mb-6">Format: .pdf (Siap Cetak)</p>
+                            <button onclick="simulateDownload(this, 'Rekap_Bulanan_PDF')" class="w-full py-2 bg-red-50 text-red-600 rounded-xl text-sm font-bold hover:bg-red-100 transition flex items-center justify-center space-x-2">
+                                <i class="fas fa-download"></i>
+                                <span>Unduh PDF</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: LOKASI KERJA -->
+                <div id="admin-section-lokasi" class="admin-content-section hidden animate-fade-in">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold text-gray-800">Pengaturan Lokasi & Geofencing</h2>
+                        <button onclick="openModalLokasi()" class="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-sm hover:bg-blue-700 transition font-medium text-sm flex items-center space-x-2">
+                            <i class="fas fa-map-pin"></i>
+                            <span>Tambah Titik Lokasi</span>
+                        </button>
+                    </div>
+
+                    <!-- Peta Geofencing Overview -->
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-map text-blue-500 mr-2"></i>
+                            <h3 class="font-bold text-gray-800 text-sm">Peta Persebaran Lokasi</h3>
+                        </div>
+                        <div id="map-overview" class="w-full h-80 bg-gray-100 rounded-xl border border-gray-200"></div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-3 px-6 font-medium">Nama Lokasi</th>
+                                        <th class="py-3 px-6 font-medium">Koordinat (Lat, Long)</th>
+                                        <th class="py-3 px-6 font-medium">Radius Aman</th>
+                                        <th class="py-3 px-6 font-medium">Status</th>
+                                        <th class="py-3 px-6 font-medium">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-lokasi" class="divide-y divide-gray-100">
+                                    <!-- Data Lokasi akan di-render di sini oleh JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: PENGUMUMAN -->
+                <div id="admin-section-pengumuman" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Broadcast Pengumuman</h2>
+                    <div class="grid grid-cols-2 gap-6">
+                        <!-- Form Buat Pengumuman -->
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <h3 class="font-bold text-gray-800 mb-4">Buat Pengumuman Baru</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Judul Pengumuman</label>
+                                    <input id="input-announcement-title" type="text" placeholder="Misal: Libur Nasional" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Target Penerima</label>
+                                    <select id="input-announcement-target" class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500">
+                                        <option value="Semua Karyawan">Semua Karyawan</option>
+                                        <option value="Kantor Pusat Saja">Kantor Pusat Saja</option>
+                                        <option value="Cabang Bandung">Cabang Bandung</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Isi Pesan</label>
+                                    <textarea id="input-announcement-message" rows="4" placeholder="Ketik pesan Anda di sini..." class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 resize-none"></textarea>
+                                </div>
+                                <button onclick="submitAnnouncement()" class="w-full py-2.5 bg-blue-600 text-white rounded-xl font-semibold shadow-sm hover:bg-blue-700 transition flex items-center justify-center space-x-2">
+                                    <i class="fas fa-paper-plane"></i>
+                                    <span>Kirim Broadcast Sekarang</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- List Pengumuman Aktif -->
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <h3 class="font-bold text-gray-800 mb-4">Pengumuman Terkirim</h3>
+                            <div id="admin-announcement-list" class="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                                <!-- Data list dirender via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: CUTI -->
+                <div id="admin-section-cuti" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Persetujuan Cuti</h2>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-3 px-6 font-medium">Pengaju & Waktu</th>
+                                        <th class="py-3 px-6 font-medium">Jenis Cuti</th>
+                                        <th class="py-3 px-6 font-medium">Tgl Pelaksanaan</th>
+                                        <th class="py-3 px-6 font-medium">Alasan</th>
+                                        <th class="py-3 px-6 font-medium">Status</th>
+                                        <th class="py-3 px-6 font-medium">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-cuti" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: LEMBUR -->
+                <div id="admin-section-lembur" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Persetujuan Lembur</h2>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-3 px-6 font-medium">Pengaju & Waktu</th>
+                                        <th class="py-3 px-6 font-medium">Tanggal Lembur</th>
+                                        <th class="py-3 px-6 font-medium">Jam Lembur</th>
+                                        <th class="py-3 px-6 font-medium">Pekerjaan</th>
+                                        <th class="py-3 px-6 font-medium">Status</th>
+                                        <th class="py-3 px-6 font-medium">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-lembur" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: MANUAL -->
+                <div id="admin-section-manual" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Koreksi Kehadiran Manual</h2>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-3 px-6 font-medium">Pengaju & Waktu</th>
+                                        <th class="py-3 px-6 font-medium">Tgl Koreksi</th>
+                                        <th class="py-3 px-6 font-medium">Jam Koreksi</th>
+                                        <th class="py-3 px-6 font-medium">Alasan</th>
+                                        <th class="py-3 px-6 font-medium">Status</th>
+                                        <th class="py-3 px-6 font-medium">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-manual" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: KASBON -->
+                <div id="admin-section-kasbon" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Pengajuan Kasbon</h2>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-3 px-6 font-medium">Pengaju & Waktu</th>
+                                        <th class="py-3 px-6 font-medium">Nominal Pinjaman</th>
+                                        <th class="py-3 px-6 font-medium">Rencana Cicilan</th>
+                                        <th class="py-3 px-6 font-medium">Keperluan</th>
+                                        <th class="py-3 px-6 font-medium">Status</th>
+                                        <th class="py-3 px-6 font-medium">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-kasbon" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION: REIMBURSE -->
+                <div id="admin-section-reimburse" class="admin-content-section hidden animate-fade-in">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6">Klaim Reimburse</h2>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                        <th class="py-3 px-6 font-medium">Pengaju & Waktu</th>
+                                        <th class="py-3 px-6 font-medium">Kategori</th>
+                                        <th class="py-3 px-6 font-medium">Nominal</th>
+                                        <th class="py-3 px-6 font-medium">Keterangan</th>
+                                        <th class="py-3 px-6 font-medium">Status</th>
+                                        <th class="py-3 px-6 font-medium">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-table-reimburse" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            
+            <!-- MODAL TAMBAH KARYAWAN (Admin Overlays) -->
+            <div id="modal-add-karyawan" class="fixed inset-0 bg-black/50 z-[100] hidden items-center justify-center animate-fade-in p-4 backdrop-blur-sm">
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+                    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                        <h3 id="modal-karyawan-title" class="font-bold text-gray-800">Tambah Karyawan Baru</h3>
+                        <button onclick="closeModalKaryawan()" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                            <i class="fas fa-times text-lg"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                        <!-- Hidden input untuk ID (Berguna saat Mode Edit) -->
+                        <input type="hidden" id="input-emp-id">
+                        
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nama Lengkap</label>
+                            <input id="input-emp-name" type="text" placeholder="Misal: Ahmad Yani" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nomor Induk Karyawan (NIK)</label>
+                            <input id="input-emp-nik" type="text" placeholder="Misal: 2026040001" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">Email</label>
+                                <input id="input-emp-email" type="email" placeholder="email@kantor.com" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">No. Telepon</label>
+                                <input id="input-emp-phone" type="text" placeholder="0812..." class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Departemen</label>
+                            <select id="input-emp-dept" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                                <option value="IT Development">IT Development</option>
+                                <option value="HR & General Affair">HR & General Affair</option>
+                                <option value="Finance">Finance</option>
+                                <option value="Marketing">Marketing</option>
+                                <option value="Operations">Operations</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Jabatan / Posisi</label>
+                            <input id="input-emp-role" type="text" placeholder="Misal: Staff Keuangan" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                    </div>
+                    <div class="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50">
+                        <button onclick="closeModalKaryawan()" class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">Batal</button>
+                        <button onclick="submitNewKaryawan()" class="px-5 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 rounded-lg shadow-md transition-colors">Simpan Data</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL TAMBAH LOKASI (Admin Overlays) -->
+            <div id="modal-add-lokasi" class="fixed inset-0 bg-black/50 z-[100] hidden items-center justify-center animate-fade-in p-4 backdrop-blur-sm">
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+                    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                        <h3 id="modal-lokasi-title" class="font-bold text-gray-800">Tambah Titik Lokasi Baru</h3>
+                        <button onclick="closeModalLokasi()" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                            <i class="fas fa-times text-lg"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                        <input type="hidden" id="input-loc-id">
+                        
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Pilih Titik di Peta</label>
+                            <div id="map-picker" class="w-full h-48 bg-gray-100 rounded-xl border border-gray-200 mb-2"></div>
+                            <p class="text-[10px] text-gray-500"><i class="fas fa-info-circle mr-1"></i>Klik pada peta untuk mengambil titik koordinat secara otomatis, atau ketik manual di bawah.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nama Lokasi</label>
+                            <input id="input-loc-name" type="text" placeholder="Misal: Kantor Cabang Surabaya" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">Latitude</label>
+                                <input id="input-loc-lat" type="number" step="any" placeholder="-7.250445" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">Longitude</label>
+                                <input id="input-loc-lng" type="number" step="any" placeholder="112.768845" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">Radius Aman (Meter)</label>
+                                <input id="input-loc-radius" type="number" placeholder="50" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">Status Geofencing</label>
+                                <select id="input-loc-status" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                                    <option value="Aktif">Aktif</option>
+                                    <option value="Nonaktif">Nonaktif</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50">
+                        <button onclick="closeModalLokasi()" class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">Batal</button>
+                        <button onclick="submitLokasi()" class="px-5 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 rounded-lg shadow-md transition-colors">Simpan Lokasi</button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div> <!-- PENUTUP VIEW ADMIN -->
+
+    <!-- SCRIPT LOGIKA APLIKASI (SUPABASE TERINTEGRASI) -->
+    <script>
+        // --- KONFIGURASI SUPABASE ---
+        // MASUKKAN URL & ANON KEY DARI SUPABASE ANDA DI BAWAH INI
+        // (Ikuti panduan di file "Tutorial Backend Supabase:tutorial_supabase.md")
+        const SUPABASE_URL = 'https://czpkzknusworbekwcznd.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6cGt6a251c3dvcmJla3djem5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNTkxMTIsImV4cCI6MjA4OTYzNTExMn0.Sv0Er28k3kRI_XMFWj3pRdIwse37zMz2ackMFzPgX5w';
+        
+        let supabaseClient = null;
+        if(SUPABASE_URL !== 'https://czpkzknusworbekwcznd.supabase.co' && typeof supabase !== 'undefined') {
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        }
+
+        // --- HELPER DATABASE SUPABASE ---
+        async function dbInsert(table, data) {
+            if(supabaseClient) {
+                const { error } = await supabaseClient.from(table).insert([data]);
+                if(error) console.error(`Error Insert [${table}]:`, error);
+            }
+        }
+
+        async function dbUpdate(table, id, data) {
+            if(supabaseClient) {
+                const { error } = await supabaseClient.from(table).update(data).eq('id', id);
+                if(error) console.error(`Error Update [${table}]:`, error);
+            }
+        }
+
+        async function dbDelete(table, id) {
+            if(supabaseClient) {
+                const { error } = await supabaseClient.from(table).delete().eq('id', id);
+                if(error) console.error(`Error Delete [${table}]:`, error);
+            }
+        }
+
+        async function loadAllData() {
+            if(!supabaseClient) return;
+            try {
+                // Fetch Employees
+                const { data: emp } = await supabaseClient.from('employees').select('*');
+                if(emp && emp.length > 0) appState.employees = emp;
+                
+                // Fetch History
+                const { data: hist } = await supabaseClient.from('history').select('*').order('id', {ascending: false});
+                if(hist && hist.length > 0) appState.history = hist;
+
+                // Fetch Locations
+                const { data: loc } = await supabaseClient.from('locations').select('*');
+                if(loc && loc.length > 0) appState.locations = loc;
+
+                // Fetch Announcements
+                const { data: ann } = await supabaseClient.from('announcements').select('*').order('id', {ascending: false});
+                if(ann && ann.length > 0) appState.announcements = ann;
+
+                // Fetch Payslips
+                const { data: pay } = await supabaseClient.from('payslips').select('*').order('id', {ascending: false});
+                if(pay && pay.length > 0) appState.payslips = pay;
+
+                // Fetch Requests (Cuti, Lembur, etc)
+                const { data: reqs } = await supabaseClient.from('requests').select('*').order('id', {ascending: false});
+                if(reqs && reqs.length > 0) {
+                    appState.requests = { cuti: [], lembur: [], manual: [], kasbon: [], reimburse: [] };
+                    reqs.forEach(r => {
+                        if(appState.requests[r.type]) appState.requests[r.type].push(r);
+                    });
+                }
+            } catch(e) {
+                console.error('Gagal memuat data dari Supabase:', e);
+            }
+        }
+
+        // State Aplikasi (Data lokal ini akan ditimpa jika Supabase terhubung)
+        const appState = {
+            today: new Date(),
+            hasClockedIn: false,
+            hasClockedOut: false,
+            timeIn: null,
+            timeOut: null,
+            history: [],
+            requests: {
+                cuti: [],
+                lembur: [],
+                manual: [],
+                kasbon: [],
+                reimburse: []
+            },
+            employees: [],
+            locations: [
+                { id: 1, name: 'Kantor Pusat Jakarta', lat: '-6.2088', lng: '106.8456', radius: '50', status: 'Aktif' },
+                { id: 2, name: 'Cabang Bandung', lat: '-6.9175', lng: '107.6191', radius: '30', status: 'Aktif' }
+            ],
+            announcements: [
+                { id: 2, title: 'Pemeliharaan Server Aplikasi', message: 'Aplikasi akan mengalami kendala akses pada hari Sabtu pukul 00:00 - 04:00 WIB.', target: 'Semua Karyawan', date: '18 Mar 2026' },
+                { id: 1, title: 'Cuti Bersama Hari Raya', message: 'Diberitahukan kepada seluruh karyawan bahwa cuti bersama akan dimulai hari selasa minggu depan.', target: 'Semua Karyawan', date: '10 Mar 2026' }
+            ],
+            payslips: [
+                { id: 2, empName: 'Karyawan Demo', period: '2026-02', periodLabel: 'Februari 2026', date: '28 Feb 2026' },
+                { id: 1, empName: 'Karyawan Demo', period: '2026-01', periodLabel: 'Januari 2026', date: '31 Jan 2026' }
+            ]
+        };
+
+        let cameraStream = null;
+        let currentAbsenType = '';
+        let currentHistoryFilter = 'semua';
+
+        // Inisialisasi saat halaman dimuat
+        document.addEventListener('DOMContentLoaded', async () => {
+            updateClock();
+            setInterval(updateClock, 1000);
+            updateDateDisplay();
+            
+            // Proses sinkronisasi database dari Supabase
+            if(supabaseClient) {
+                showToast('Menyinkronkan dengan database cloud...', 'success');
+                await loadAllData();
+            }
+            
+            // Render View awal berdasarkan state
+            renderHistory();
+            renderAdminAnnouncements();
+            renderEmployeeAnnouncements();
+            renderAdminPayslips();
+            renderEmployeePayslips();
+        });
+
+        // --- NAVIGASI VIEW UTAMA (Tanpa Login Form) ---
+        function showView(viewName) {
+            // Sembunyikan semua view
+            document.getElementById('view-login').classList.add('hidden');
+            document.getElementById('view-employee').classList.remove('flex');
+            document.getElementById('view-employee').classList.add('hidden');
+            document.getElementById('view-admin').classList.add('hidden');
+
+            // Tampilkan view yang dipilih
+            if (viewName === 'employee') {
+                document.getElementById('view-employee').classList.remove('hidden');
+                document.getElementById('view-employee').classList.add('flex');
+                showToast('Selamat bekerja!', 'success');
+            } else if (viewName === 'admin') {
+                document.getElementById('view-admin').classList.remove('hidden');
+                document.getElementById('view-admin').classList.add('flex');
+                renderAdminDashboard(); 
+                showToast('Akses Dashboard Admin', 'success');
+            } else {
+                // Login view (Kembali ke pilihan akses)
+                document.getElementById('view-login').classList.remove('hidden');
+            }
+        }
+
+        function logout() {
+            showView('login');
+        }
+
+        // --- FUNGSI LOGIN ADMIN ---
+        function showAdminLoginForm() {
+            document.getElementById('role-selection').classList.add('hidden');
+            document.getElementById('role-selection').classList.remove('block');
+            document.getElementById('admin-login-form').classList.remove('hidden');
+            document.getElementById('admin-login-form').classList.add('block');
+        }
+
+        function hideAdminLoginForm() {
+            document.getElementById('admin-login-form').classList.add('hidden');
+            document.getElementById('admin-login-form').classList.remove('block');
+            document.getElementById('role-selection').classList.remove('hidden');
+            document.getElementById('role-selection').classList.add('block');
+            document.getElementById('admin-password').value = '';
+        }
+
+        function verifyAdminLogin() {
+            const pw = document.getElementById('admin-password').value;
+            // Kata sandi statis untuk keperluan demo
+            if (pw === 'admin123') {
+                hideAdminLoginForm(); // reset tampilan untuk logout berikutnya
+                showView('admin');
+            } else {
+                showToast('Kata sandi salah! Petunjuk: "admin123"', 'error');
+            }
+        }
+
+        // Update Jam Digital
+        function updateClock() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('digital-clock').innerText = `${hours}:${minutes}:${seconds}`;
+
+            // Update Sapaan
+            const currentHour = now.getHours();
+            let sapaan = 'Halo';
+            if (currentHour >= 4 && currentHour < 11) {
+                sapaan = 'Selamat Pagi';
+            } else if (currentHour >= 11 && currentHour < 15) {
+                sapaan = 'Selamat Siang';
+            } else if (currentHour >= 15 && currentHour < 18) {
+                sapaan = 'Selamat Sore';
+            } else {
+                sapaan = 'Selamat Malam';
+            }
+            
+            const greetingEl = document.getElementById('greeting-text');
+            if (greetingEl) greetingEl.innerText = sapaan;
+        }
+
+        function updateDateDisplay() {
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const dateStr = appState.today.toLocaleDateString('id-ID', options);
+            document.getElementById('current-date').innerText = dateStr;
+            document.getElementById('admin-date').innerText = dateStr;
+        }
+
+        // --- FUNGSI KAMERA ---
+        async function openCamera(jenis) {
+            currentAbsenType = jenis;
+            const modal = document.getElementById('camera-modal');
+            const video = document.getElementById('camera-video');
+            document.getElementById('camera-title').innerText = jenis === 'masuk' ? 'Selfie Absen Masuk' : 'Selfie Absen Pulang';
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                video.srcObject = cameraStream;
+            } catch (err) {
+                console.error("Error akses kamera:", err);
+                showToast('Gagal mengakses kamera. Pastikan izin kamera diberikan.', 'error');
+                closeCamera();
+            }
+        }
+
+        function closeCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            const modal = document.getElementById('camera-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function takePhotoAndAbsen() {
+            const video = document.getElementById('camera-video');
+            const canvas = document.getElementById('camera-canvas');
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            
+            context.translate(canvas.width, 0);
+            context.scale(-1, 1);
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const photoDataUrl = canvas.toDataURL('image/jpeg');
+            closeCamera();
+            processAbsen(currentAbsenType, photoDataUrl);
+        }
+
+        function filterHistory(type) {
+            currentHistoryFilter = type;
+            const filters = ['semua', 'hadir', 'terlambat'];
+            filters.forEach(f => {
+                const btn = document.getElementById(`filter-${f}`);
+                btn.className = "bg-white border border-gray-200 text-gray-600 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap hover:bg-gray-50 transition-colors";
+            });
+            const activeBtn = document.getElementById(`filter-${type}`);
+            activeBtn.className = "bg-blue-600 text-white border border-blue-600 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shadow-sm transition-colors";
+            renderHistory();
+        }
+
+        function processAbsen(jenis, photoUrl) {
+            const now = new Date();
+            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+            const isLate = now.getHours() >= 8 && now.getMinutes() > 0;
+            
+            const btnMasuk = document.getElementById('btn-masuk');
+            const btnPulang = document.getElementById('btn-pulang');
+            const statusSelesai = document.getElementById('status-selesai');
+            const msg = document.getElementById('absen-message');
+
+            if (jenis === 'masuk') {
+                appState.hasClockedIn = true;
+                appState.timeIn = timeStr;
+                document.getElementById('status-time-in').innerText = timeStr;
+                btnMasuk.classList.add('hidden');
+                btnPulang.classList.remove('hidden');
+                msg.innerText = "Anda telah absen masuk. Jangan lupa absen pulang nanti.";
+                showToast("Berhasil Absen Masuk pada " + timeStr, "success");
+
+                const newRecord = {
+                    id: Date.now(),
+                    name: 'Karyawan Demo',
+                    role: 'Staff Umum',
+                    date: now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+                    day: now.toLocaleDateString('id-ID', { weekday: 'long' }),
+                    timeIn: timeStr,
+                    timeOut: '--:--',
+                    status: 'Hadir (Belum Pulang)',
+                    late: isLate,
+                    photoIn: photoUrl,
+                    photoOut: null
+                };
+                
+                appState.history.unshift(newRecord);
+                dbInsert('history', newRecord); // Simpan ke Supabase Cloud
+                renderHistory();
+
+            } else if (jenis === 'pulang') {
+                appState.hasClockedOut = true;
+                appState.timeOut = timeStr;
+                document.getElementById('status-time-out').innerText = timeStr;
+                btnPulang.classList.add('hidden');
+                statusSelesai.classList.remove('hidden');
+                statusSelesai.classList.add('flex');
+                msg.innerText = "Terima kasih. Anda telah menyelesaikan jam kerja hari ini.";
+                showToast("Berhasil Absen Pulang pada " + timeStr, "success");
+
+                if(appState.history.length > 0) {
+                    appState.history[0].timeOut = timeStr;
+                    appState.history[0].status = appState.history[0].late ? 'Terlambat' : 'Hadir';
+                    appState.history[0].photoOut = photoUrl;
+                    
+                    // Update ke Supabase Cloud
+                    dbUpdate('history', appState.history[0].id, {
+                        timeOut: timeStr,
+                        status: appState.history[0].status,
+                        photoOut: photoUrl
+                    });
+                    
+                    renderHistory();
+                }
+            }
+        }
+
+        function renderHistory() {
+            const listContainer = document.getElementById('history-list');
+            listContainer.innerHTML = ''; 
+
+            let filteredData = appState.history;
+            if (currentHistoryFilter === 'hadir') {
+                filteredData = appState.history.filter(item => item.late === false);
+            } else if (currentHistoryFilter === 'terlambat') {
+                filteredData = appState.history.filter(item => item.late === true);
+            }
+
+            if (filteredData.length === 0) {
+                listContainer.innerHTML = '<p class="text-center text-gray-400 text-sm mt-10">Belum ada riwayat absensi untuk kategori ini.</p>';
+                return;
+            }
+
+            filteredData.forEach(item => {
+                let statusColor = 'text-green-600 bg-green-50';
+                if (item.late) statusColor = 'text-red-600 bg-red-50';
+                if (item.status.includes('Belum')) statusColor = 'text-yellow-600 bg-yellow-50';
+
+                let photoHtml = '';
+                if(item.photoIn || item.photoOut) {
+                    photoHtml = `<div class="flex mt-2">`;
+                    if(item.photoIn) photoHtml += `<img src="${item.photoIn}" class="w-7 h-7 rounded-full border border-gray-200 object-cover shadow-sm" title="Selfie Masuk">`;
+                    if(item.photoOut) photoHtml += `<img src="${item.photoOut}" class="w-7 h-7 rounded-full border border-gray-200 object-cover shadow-sm -ml-2" title="Selfie Pulang">`;
+                    photoHtml += `</div>`;
+                }
+
+                const html = `
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                        <div class="flex items-center space-x-4">
+                            <div class="w-12 h-12 rounded-lg bg-blue-50 text-blue-600 flex flex-col justify-center items-center">
+                                <span class="text-xs font-bold">${item.date.split(' ')[0]}</span>
+                                <span class="text-[10px] uppercase">${item.date.split(' ')[1]}</span>
+                            </div>
+                            <div>
+                                <p class="font-bold text-gray-800 text-sm">${item.day}</p>
+                                <div class="flex items-center space-x-2 text-xs text-gray-500 mt-1">
+                                    <span><i class="fas fa-sign-in-alt text-green-500"></i> ${item.timeIn}</span>
+                                    <span>-</span>
+                                    <span><i class="fas fa-sign-out-alt text-red-500"></i> ${item.timeOut}</span>
+                                </div>
+                                ${photoHtml}
+                            </div>
+                        </div>
+                        <div class="px-2 py-1 rounded text-[10px] font-bold ${statusColor}">
+                            ${item.status}
+                        </div>
+                    </div>
+                `;
+                listContainer.insertAdjacentHTML('beforeend', html);
+            });
+        }
+
+        function switchTab(tabName) {
+            document.getElementById('section-home').classList.add('hidden');
+            document.getElementById('section-kehadiran').classList.add('hidden');
+            document.getElementById('section-history').classList.add('hidden');
+            document.getElementById('section-profile').classList.add('hidden');
+
+            ['home', 'kehadiran', 'history', 'profile'].forEach(name => {
+                const btn = document.getElementById(`tab-${name}`);
+                const iconContainer = btn.querySelector('.icon-container');
+                const activeDot = btn.querySelector('.active-dot');
+                const textSpan = btn.querySelector('span:not(.active-dot)');
+                
+                btn.classList.remove('text-blue-600');
+                btn.classList.add('text-gray-400');
+                iconContainer.classList.remove('scale-110');
+                activeDot.classList.replace('opacity-100', 'opacity-0');
+                textSpan.classList.remove('font-semibold', 'opacity-100');
+                textSpan.classList.add('font-medium', 'opacity-70');
+            });
+
+            document.getElementById(`section-${tabName}`).classList.remove('hidden');
+            
+            const activeBtn = document.getElementById(`tab-${tabName}`);
+            const activeIconContainer = activeBtn.querySelector('.icon-container');
+            const activeDotMarker = activeBtn.querySelector('.active-dot');
+            const activeTextSpan = activeBtn.querySelector('span:not(.active-dot)');
+            
+            activeBtn.classList.remove('text-gray-400');
+            activeBtn.classList.add('text-blue-600');
+            activeIconContainer.classList.add('scale-110');
+            activeDotMarker.classList.replace('opacity-0', 'opacity-100');
+            activeTextSpan.classList.remove('font-medium', 'opacity-70');
+            activeTextSpan.classList.add('font-semibold', 'opacity-100');
+
+            // Inisialisasi peta jika tab kehadiran dibuka
+            if (tabName === 'kehadiran') {
+                setTimeout(() => {
+                    initEmployeeMap();
+                }, 300);
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const bgColor = type === 'success' ? 'bg-green-800' : 'bg-red-800';
+            const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+
+            toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 toast-enter`;
+            toast.innerHTML = `
+                <i class="fas ${icon} text-xl"></i>
+                <span class="text-sm font-medium flex-1">${message}</span>
+                <button onclick="this.parentElement.remove()" class="text-white/70 hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.replace('toast-enter', 'toast-exit');
+                setTimeout(() => {
+                    if(container.contains(toast)) container.removeChild(toast);
+                }, 300);
+            }, 3000);
+        }
+
+        function openFeature(featureId) {
+            const overlay = document.getElementById(`feature-${featureId}`);
+            if (overlay) {
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+            }
+        }
+
+        function closeFeature(featureId) {
+            const overlay = document.getElementById(`feature-${featureId}`);
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
+        }
+
+        function submitFeature(featureId, defaultMsg) {
+            let newData = { 
+                id: Date.now(), 
+                name: 'Karyawan Demo', 
+                status: 'Menunggu', 
+                timestamp: new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) 
+            };
+            
+            if (featureId === 'cuti') {
+                newData.detail1 = document.getElementById('cuti-jenis').value || 'Cuti Tahunan';
+                newData.detail2 = (document.getElementById('cuti-mulai').value || '-') + ' s/d ' + (document.getElementById('cuti-selesai').value || '-');
+                newData.detail3 = document.getElementById('cuti-alasan').value || '-';
+            } else if (featureId === 'lembur') {
+                newData.detail1 = document.getElementById('lembur-tanggal').value || '-';
+                newData.detail2 = (document.getElementById('lembur-mulai').value || '-') + ' - ' + (document.getElementById('lembur-selesai').value || '-');
+                newData.detail3 = document.getElementById('lembur-deskripsi').value || '-';
+            } else if (featureId === 'manual') {
+                newData.detail1 = document.getElementById('manual-tanggal').value || '-';
+                newData.detail2 = (document.getElementById('manual-masuk').value || '-') + ' - ' + (document.getElementById('manual-pulang').value || '-');
+                newData.detail3 = document.getElementById('manual-alasan').value || '-';
+            } else if (featureId === 'kasbon') {
+                newData.detail1 = 'Rp ' + (document.getElementById('kasbon-nominal').value || '0');
+                newData.detail2 = document.getElementById('kasbon-cicilan').value || '-';
+                newData.detail3 = document.getElementById('kasbon-keperluan').value || '-';
+            } else if (featureId === 'reimburse') {
+                newData.detail1 = document.getElementById('reimburse-kategori').value || '-';
+                newData.detail2 = 'Rp ' + (document.getElementById('reimburse-nominal').value || '0');
+                newData.detail3 = document.getElementById('reimburse-keterangan').value || '-';
+            }
+
+            if(appState.requests[featureId]) {
+                appState.requests[featureId].unshift(newData);
+                
+                // Simpan pengajuan ke Supabase
+                const dbData = { ...newData, type: featureId };
+                dbInsert('requests', dbData);
+            }
+            
+            const inputs = document.querySelectorAll(`#feature-${featureId} input, #feature-${featureId} textarea`);
+            inputs.forEach(input => input.value = '');
+
+            closeFeature(featureId);
+            showToast(defaultMsg, 'success');
+            renderAdminTable(featureId);
+        }
+
+        function handleProfileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const maxSize = 10 * 1024 * 1024;
+            if (file.size > maxSize) {
+                showToast('Ukuran foto terlalu besar. Maksimal 10MB!', 'error');
+                event.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // Update foto di halaman profil
+                const imgElement = document.getElementById('profile-img');
+                const initialsElement = document.getElementById('profile-initials');
+                
+                imgElement.src = e.target.result;
+                imgElement.classList.remove('hidden');
+                initialsElement.classList.add('hidden');
+                
+                // Update foto di header bar atas
+                const headerImgElement = document.getElementById('header-profile-img');
+                const headerInitialsElement = document.getElementById('header-profile-initials');
+                
+                if (headerImgElement && headerInitialsElement) {
+                    headerImgElement.src = e.target.result;
+                    headerImgElement.classList.remove('hidden');
+                    headerInitialsElement.classList.add('hidden');
+                }
+                
+                showToast('Foto profil berhasil diperbarui', 'success');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function saveProfileFeature(featureId) {
+            closeFeature(featureId);
+            showToast('Data berhasil disimpan secara lokal', 'success');
+        }
+
+        function simulateDownload(btn, type) {
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>Memproses...</span>`;
+            btn.classList.add('opacity-75', 'cursor-not-allowed');
+            btn.disabled = true;
+
+            setTimeout(() => {
+                btn.innerHTML = `<i class="fas fa-check"></i><span>Tersimpan</span>`;
+                const oldClasses = btn.className;
+                btn.className = "w-full py-2 bg-gray-800 text-white rounded-xl text-sm font-bold transition flex items-center justify-center space-x-2";
+                
+                showToast(`File ${type} berhasil diunduh ke perangkat Anda.`, 'success');
+
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.className = oldClasses;
+                    btn.classList.remove('opacity-75', 'cursor-not-allowed');
+                    btn.disabled = false;
+                }, 2500);
+
+            }, 1500);
+        }
+
+        function switchAdminMenu(menuId) {
+            const sections = document.querySelectorAll('.admin-content-section');
+            sections.forEach(section => {
+                section.classList.remove('block');
+                section.classList.add('hidden');
+            });
+
+            const navItems = document.querySelectorAll('.admin-nav-item');
+            navItems.forEach(item => {
+                item.classList.remove('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-500/20');
+                item.classList.add('text-gray-400', 'hover:bg-gray-800', 'hover:text-white');
+            });
+
+            const selectedSection = document.getElementById(`admin-section-${menuId}`);
+            if(selectedSection) {
+                selectedSection.classList.remove('hidden');
+                selectedSection.classList.add('block');
+            }
+
+            const selectedNav = document.getElementById(`nav-admin-${menuId}`);
+            if(selectedNav) {
+                selectedNav.classList.remove('text-gray-400', 'hover:bg-gray-800', 'hover:text-white');
+                selectedNav.classList.add('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-500/20');
+            }
+
+            if(['cuti', 'lembur', 'manual', 'kasbon', 'reimburse'].includes(menuId)) {
+                renderAdminTable(menuId);
+            } else if (menuId === 'karyawan') {
+                renderKaryawanTable();
+            } else if (menuId === 'lokasi') {
+                renderLokasiTable();
+                setTimeout(() => initOverviewMap(), 100);
+            } else if (menuId === 'slipgaji') {
+                renderAdminPayslips();
+            }
+        }
+
+        function openModalKaryawan(id = null) {
+            const modal = document.getElementById('modal-add-karyawan');
+            const title = document.getElementById('modal-karyawan-title');
+            
+            if (id) {
+                title.innerText = "Edit Data Karyawan";
+                const emp = appState.employees.find(e => e.id === id);
+                if (emp) {
+                    document.getElementById('input-emp-id').value = emp.id;
+                    document.getElementById('input-emp-name').value = emp.name;
+                    document.getElementById('input-emp-nik').value = emp.nik;
+                    document.getElementById('input-emp-email').value = emp.email || '';
+                    document.getElementById('input-emp-phone').value = emp.phone || '';
+                    document.getElementById('input-emp-dept').value = emp.department;
+                    document.getElementById('input-emp-role').value = emp.role;
+                }
+            } else {
+                title.innerText = "Tambah Karyawan Baru";
+                document.getElementById('input-emp-id').value = '';
+                document.getElementById('input-emp-name').value = '';
+                document.getElementById('input-emp-nik').value = '';
+                document.getElementById('input-emp-email').value = '';
+                document.getElementById('input-emp-phone').value = '';
+                document.getElementById('input-emp-dept').value = 'IT Development';
+                document.getElementById('input-emp-role').value = '';
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeModalKaryawan() {
+            const modal = document.getElementById('modal-add-karyawan');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function submitNewKaryawan() {
+            const id = document.getElementById('input-emp-id').value;
+            const name = document.getElementById('input-emp-name').value;
+            const nik = document.getElementById('input-emp-nik').value;
+            const email = document.getElementById('input-emp-email').value;
+            const phone = document.getElementById('input-emp-phone').value;
+            const dept = document.getElementById('input-emp-dept').value;
+            const role = document.getElementById('input-emp-role').value;
+
+            if(!name || !nik) {
+                showToast('Nama Lengkap dan NIK wajib diisi!', 'error');
+                return;
+            }
+
+            let initials = 'NA';
+            const parts = name.split(' ');
+            if(parts.length > 1) {
+                initials = (parts[0][0] + parts[1][0]).toUpperCase();
+            } else {
+                initials = name.substring(0, 2).toUpperCase();
+            }
+
+            if (id) {
+                const index = appState.employees.findIndex(e => e.id == id);
+                if (index !== -1) {
+                    appState.employees[index].name = name;
+                    appState.employees[index].nik = nik;
+                    appState.employees[index].email = email;
+                    appState.employees[index].phone = phone;
+                    appState.employees[index].department = dept;
+                    appState.employees[index].role = role || 'Staff Umum';
+                    appState.employees[index].initials = initials;
+                    
+                    dbUpdate('employees', id, appState.employees[index]); // Update Supabase
+                    showToast('Data karyawan berhasil diperbarui', 'success');
+                }
+            } else {
+                const themes = [
+                    { bg: 'bg-blue-100', text: 'text-blue-600' },
+                    { bg: 'bg-green-100', text: 'text-green-600' },
+                    { bg: 'bg-purple-100', text: 'text-purple-600' },
+                    { bg: 'bg-orange-100', text: 'text-orange-600' },
+                    { bg: 'bg-teal-100', text: 'text-teal-600' }
+                ];
+                const randomTheme = themes[Math.floor(Math.random() * themes.length)];
+
+                const newEmp = {
+                    id: Date.now(),
+                    name: name,
+                    nik: nik,
+                    email: email,
+                    phone: phone,
+                    department: dept,
+                    role: role || 'Staff Umum',
+                    initials: initials,
+                    theme: randomTheme
+                };
+
+                appState.employees.push(newEmp);
+                dbInsert('employees', newEmp); // Insert ke Supabase
+                showToast('Karyawan baru berhasil ditambahkan', 'success');
+            }
+            
+            closeModalKaryawan();
+            renderKaryawanTable();
+        }
+
+        function deleteKaryawan(id) {
+            appState.employees = appState.employees.filter(emp => emp.id !== id);
+            dbDelete('employees', id); // Delete dari Supabase
+            renderKaryawanTable();
+            showToast('Data karyawan berhasil dihapus', 'success');
+        }
+
+        function renderKaryawanTable() {
+            const tbody = document.getElementById('admin-table-karyawan');
+            if(!tbody) return;
+            tbody.innerHTML = '';
+
+            if(appState.employees.length === 0) {
+                 tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-gray-400">Belum ada data master karyawan.</td></tr>`;
+                 return;
+            }
+
+            appState.employees.forEach(emp => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50 transition-colors";
+                tr.innerHTML = `
+                    <td class="py-3 px-6">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 rounded-full ${emp.theme.bg} ${emp.theme.text} flex items-center justify-center font-bold text-xs shadow-sm">${emp.initials}</div>
+                            <div>
+                                <span class="font-bold text-sm text-gray-800 block">${emp.name}</span>
+                                <span class="text-[10px] text-gray-500 font-mono">NIK: ${emp.nik}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-3 px-6">
+                        <span class="block text-sm text-gray-800"><i class="fas fa-envelope text-gray-400 mr-1 w-3"></i> ${emp.email || '-'}</span>
+                        <span class="block text-xs text-gray-500 mt-0.5"><i class="fas fa-phone text-gray-400 mr-1 w-3"></i> ${emp.phone || '-'}</span>
+                    </td>
+                    <td class="py-3 px-6">
+                        <span class="block text-sm text-gray-800">${emp.department}</span>
+                        <span class="block text-[10px] text-gray-500">${emp.role}</span>
+                    </td>
+                    <td class="py-3 px-6">
+                        <button onclick="openModalKaryawan(${emp.id})" class="text-blue-500 hover:text-blue-700 mr-3 transition-transform active:scale-90 bg-blue-50 p-1.5 rounded-lg" title="Edit Data"><i class="fas fa-edit"></i></button>
+                        <button onclick="if(confirm('Yakin ingin menghapus data karyawan: ${emp.name}?')) deleteKaryawan(${emp.id})" class="text-red-500 hover:text-red-700 transition-transform active:scale-90 bg-red-50 p-1.5 rounded-lg" title="Hapus Data"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function openModalLokasi(id = null) {
+            const modal = document.getElementById('modal-add-lokasi');
+            const title = document.getElementById('modal-lokasi-title');
+            
+            if (id) {
+                title.innerText = "Edit Titik Lokasi";
+                const loc = appState.locations.find(l => l.id === id);
+                if (loc) {
+                    document.getElementById('input-loc-id').value = loc.id;
+                    document.getElementById('input-loc-name').value = loc.name;
+                    document.getElementById('input-loc-lat').value = loc.lat;
+                    document.getElementById('input-loc-lng').value = loc.lng;
+                    document.getElementById('input-loc-radius').value = loc.radius;
+                    document.getElementById('input-loc-status').value = loc.status;
+                }
+            } else {
+                title.innerText = "Tambah Titik Lokasi Baru";
+                document.getElementById('input-loc-id').value = '';
+                document.getElementById('input-loc-name').value = '';
+                document.getElementById('input-loc-lat').value = '';
+                document.getElementById('input-loc-lng').value = '';
+                document.getElementById('input-loc-radius').value = '50';
+                document.getElementById('input-loc-status').value = 'Aktif';
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            setTimeout(() => {
+                initPickerMap();
+            }, 200);
+        }
+
+        function closeModalLokasi() {
+            const modal = document.getElementById('modal-add-lokasi');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function submitLokasi() {
+            const id = document.getElementById('input-loc-id').value;
+            const name = document.getElementById('input-loc-name').value;
+            const lat = document.getElementById('input-loc-lat').value;
+            const lng = document.getElementById('input-loc-lng').value;
+            const radius = document.getElementById('input-loc-radius').value;
+            const status = document.getElementById('input-loc-status').value;
+
+            if(!name || !lat || !lng) {
+                showToast('Nama Lokasi, Latitude, dan Longitude wajib diisi!', 'error');
+                return;
+            }
+
+            if (id) {
+                const index = appState.locations.findIndex(l => l.id == id);
+                if (index !== -1) {
+                    appState.locations[index].name = name;
+                    appState.locations[index].lat = lat;
+                    appState.locations[index].lng = lng;
+                    appState.locations[index].radius = radius || '50';
+                    appState.locations[index].status = status;
+                    
+                    dbUpdate('locations', id, appState.locations[index]); // Update Supabase
+                    showToast('Titik lokasi berhasil diperbarui', 'success');
+                }
+            } else {
+                const newLoc = {
+                    id: Date.now(),
+                    name: name,
+                    lat: lat,
+                    lng: lng,
+                    radius: radius || '50',
+                    status: status
+                };
+
+                appState.locations.push(newLoc);
+                dbInsert('locations', newLoc); // Insert ke Supabase
+                showToast('Titik lokasi baru berhasil ditambahkan', 'success');
+            }
+            
+            closeModalLokasi();
+            renderLokasiTable();
+        }
+
+        function deleteLokasi(id) {
+            appState.locations = appState.locations.filter(loc => loc.id !== id);
+            dbDelete('locations', id); // Delete dari Supabase
+            renderLokasiTable();
+            showToast('Titik lokasi berhasil dihapus', 'success');
+        }
+
+        function renderLokasiTable() {
+            const tbody = document.getElementById('admin-table-lokasi');
+            if(!tbody) return;
+            tbody.innerHTML = '';
+
+            if(appState.locations.length === 0) {
+                 tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">Belum ada titik lokasi. Silakan tambahkan.</td></tr>`;
+                 return;
+            }
+
+            appState.locations.forEach(loc => {
+                let statusBadge = loc.status === 'Aktif' 
+                    ? `<span class="px-3 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-bold border border-green-100">Aktif</span>` 
+                    : `<span class="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-[10px] font-bold border border-gray-200">Nonaktif</span>`;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50 transition-colors";
+                tr.innerHTML = `
+                    <td class="py-4 px-6 font-bold text-sm text-gray-800">
+                        <i class="fas fa-map-marker-alt text-blue-500 mr-2"></i> ${loc.name}
+                    </td>
+                    <td class="py-4 px-6 text-sm text-gray-600 font-mono text-xs">${loc.lat}, ${loc.lng}</td>
+                    <td class="py-4 px-6 text-sm text-gray-600">${loc.radius} Meter</td>
+                    <td class="py-4 px-6">${statusBadge}</td>
+                    <td class="py-4 px-6">
+                        <button onclick="openModalLokasi(${loc.id})" class="text-blue-500 hover:text-blue-700 mr-3 transition-transform active:scale-90 bg-blue-50 p-1.5 rounded-lg" title="Edit Lokasi"><i class="fas fa-edit"></i></button>
+                        <button onclick="if(confirm('Yakin ingin menghapus lokasi: ${loc.name}?')) deleteLokasi(${loc.id})" class="text-red-500 hover:text-red-700 transition-transform active:scale-90 bg-red-50 p-1.5 rounded-lg" title="Hapus Lokasi"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            if (typeof updateOverviewMap === 'function') updateOverviewMap();
+        }
+
+        // --- FUNGSI PETA & GEOFENCING ---
+        let overviewMap = null;
+        let overviewLayerGroup = null;
+        let pickerMap = null;
+        let pickerMarker = null;
+        let pickerCircle = null;
+
+        function initOverviewMap() {
+            if (!document.getElementById('map-overview')) return;
+            
+            if (!overviewMap) {
+                overviewMap = L.map('map-overview').setView([-6.2088, 106.8456], 10);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap'
+                }).addTo(overviewMap);
+                overviewLayerGroup = L.layerGroup().addTo(overviewMap);
+            }
+            
+            updateOverviewMap();
+            setTimeout(() => overviewMap.invalidateSize(), 300);
+        }
+
+        function updateOverviewMap() {
+            if (!overviewMap || !overviewLayerGroup) return;
+            overviewLayerGroup.clearLayers();
+            
+            const bounds = [];
+            
+            appState.locations.forEach(loc => {
+                if (loc.lat && loc.lng) {
+                    const latLng = [parseFloat(loc.lat), parseFloat(loc.lng)];
+                    const radius = parseFloat(loc.radius || 0);
+                    const color = loc.status === 'Aktif' ? '#3b82f6' : '#9ca3af';
+                    
+                    const marker = L.marker(latLng).bindPopup(`<b>${loc.name}</b><br>Radius: ${radius}m<br>Status: ${loc.status}`);
+                    overviewLayerGroup.addLayer(marker);
+                    
+                    if (radius > 0) {
+                        const circle = L.circle(latLng, {
+                            color: color,
+                            fillColor: color,
+                            fillOpacity: 0.2,
+                            radius: radius
+                        });
+                        overviewLayerGroup.addLayer(circle);
+                    }
+                    
+                    bounds.push(latLng);
+                }
+            });
+            
+            if (bounds.length > 0) {
+                overviewMap.fitBounds(bounds, { padding: [30, 30] });
+            }
+        }
+
+        function initPickerMap() {
+            if (!document.getElementById('map-picker')) return;
+
+            const latInput = document.getElementById('input-loc-lat');
+            const lngInput = document.getElementById('input-loc-lng');
+            const radiusInput = document.getElementById('input-loc-radius');
+
+            const lat = parseFloat(latInput.value) || -6.2088;
+            const lng = parseFloat(lngInput.value) || 106.8456;
+            const radius = parseFloat(radiusInput.value) || 50;
+
+            if (!pickerMap) {
+                pickerMap = L.map('map-picker').setView([lat, lng], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(pickerMap);
+                
+                pickerMap.on('click', function(e) {
+                    const newLat = e.latlng.lat.toFixed(6);
+                    const newLng = e.latlng.lng.toFixed(6);
+                    latInput.value = newLat;
+                    lngInput.value = newLng;
+                    updatePickerMarker(newLat, newLng, radiusInput.value);
+                });
+
+                // Update map when manual input changes
+                latInput.addEventListener('input', () => updatePickerMarker(latInput.value, lngInput.value, radiusInput.value));
+                lngInput.addEventListener('input', () => updatePickerMarker(latInput.value, lngInput.value, radiusInput.value));
+                radiusInput.addEventListener('input', () => updatePickerMarker(latInput.value, lngInput.value, radiusInput.value));
+            }
+            
+            setTimeout(() => {
+                pickerMap.invalidateSize();
+                pickerMap.setView([lat, lng], 15);
+                updatePickerMarker(lat, lng, radius);
+            }, 300);
+        }
+
+        function updatePickerMarker(lat, lng, radius) {
+            if (!pickerMap) return;
+            const parsedLat = parseFloat(lat);
+            const parsedLng = parseFloat(lng);
+            const r = parseFloat(radius || 0);
+            
+            if (isNaN(parsedLat) || isNaN(parsedLng)) return;
+
+            const latLng = [parsedLat, parsedLng];
+            
+            if (pickerMarker) pickerMap.removeLayer(pickerMarker);
+            if (pickerCircle) pickerMap.removeLayer(pickerCircle);
+            
+            pickerMarker = L.marker(latLng).addTo(pickerMap);
+            if (r > 0) {
+                pickerCircle = L.circle(latLng, {
+                    color: '#3b82f6',
+                    fillColor: '#3b82f6',
+                    fillOpacity: 0.2,
+                    radius: r
+                }).addTo(pickerMap);
+            }
+            pickerMap.setView(latLng);
+        }
+
+        function renderAdminTable(type) {
+            const tbody = document.getElementById(`admin-table-${type}`);
+            if(!tbody) return;
+            tbody.innerHTML = '';
+
+            const data = appState.requests[type];
+            if(!data || data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400"><i class="fas fa-folder-open text-3xl mb-3 block opacity-50"></i>Belum ada pengajuan ${type.toUpperCase()} baru</td></tr>`;
+                return;
+            }
+
+            data.forEach(item => {
+                let statusBadge = '';
+                if(item.status === 'Menunggu') statusBadge = `<span class="px-3 py-1 bg-yellow-50 text-yellow-600 rounded-full text-[10px] font-bold border border-yellow-100">Menunggu</span>`;
+                else if(item.status === 'Disetujui') statusBadge = `<span class="px-3 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-bold border border-green-100">Disetujui</span>`;
+                else statusBadge = `<span class="px-3 py-1 bg-red-50 text-red-600 rounded-full text-[10px] font-bold border border-red-100">Ditolak</span>`;
+
+                let actionBtns = item.status === 'Menunggu' ? `
+                    <button onclick="updateRequestStatus('${type}', ${item.id}, 'Disetujui')" class="text-green-500 hover:text-green-700 mr-2 bg-green-50 p-1.5 rounded-lg transition-transform active:scale-90" title="Setujui"><i class="fas fa-check"></i></button>
+                    <button onclick="updateRequestStatus('${type}', ${item.id}, 'Ditolak')" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg transition-transform active:scale-90" title="Tolak"><i class="fas fa-times"></i></button>
+                ` : `<span class="text-xs text-gray-400 font-medium"><i class="fas fa-flag-checkered mr-1"></i>Selesai</span>`;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50 transition-colors";
+                tr.innerHTML = `
+                    <td class="py-4 px-6">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-100 to-indigo-100 text-blue-700 flex items-center justify-center font-bold text-xs shadow-sm">KD</div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800">${item.name}</p>
+                                <p class="text-[10px] text-gray-500">${item.timestamp}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-4 px-6 text-sm text-gray-800 font-medium">${item.detail1}</td>
+                    <td class="py-4 px-6 text-sm text-gray-600">${item.detail2}</td>
+                    <td class="py-4 px-6 text-sm text-gray-600 max-w-[200px] truncate" title="${item.detail3}">${item.detail3}</td>
+                    <td class="py-4 px-6">${statusBadge}</td>
+                    <td class="py-4 px-6 whitespace-nowrap">${actionBtns}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateRequestStatus(type, id, newStatus) {
+            const req = appState.requests[type].find(r => r.id === id);
+            if(req) {
+                req.status = newStatus;
+                dbUpdate('requests', id, { status: newStatus }); // Update di Supabase
+                renderAdminTable(type);
+                showToast(`Pengajuan berhasil ${newStatus.toLowerCase()}`, newStatus === 'Disetujui' ? 'success' : 'error');
+            }
+        }
+
+        function refreshDashboard() {
+            const btn = document.getElementById('btn-refresh-dash');
+            const icon = document.getElementById('icon-refresh-dash');
+            const text = btn.querySelector('span');
+            
+            icon.classList.add('fa-spin');
+            text.innerText = "Memuat...";
+            btn.classList.add('opacity-70', 'pointer-events-none');
+            
+            const tbody = document.getElementById('admin-table-body');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="py-16 text-center">
+                        <i class="fas fa-circle-notch fa-spin text-3xl text-blue-500 mb-3"></i>
+                        <p class="text-gray-500 text-sm font-medium">Menyinkronkan data terbaru...</p>
+                    </td>
+                </tr>
+            `;
+            
+            // Reload data dari database (Supabase) jika ada, atau tunggu sejenak jika lokal
+            setTimeout(async () => {
+                if(supabaseClient) await loadAllData();
+                
+                icon.classList.remove('fa-spin');
+                text.innerText = "Segarkan Data";
+                btn.classList.remove('opacity-70', 'pointer-events-none');
+                
+                renderAdminDashboard();
+                showToast('Data kehadiran berhasil disinkronisasi', 'success');
+            }, 1200);
+        }
+
+        function renderAdminDashboard() {
+            const tbody = document.getElementById('admin-table-body');
+            tbody.innerHTML = '';
+
+            let hadirCount = 0;
+            let telatCount = 0;
+
+            if(appState.history.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-16">
+                            <div class="flex flex-col items-center justify-center text-gray-400">
+                                <i class="fas fa-inbox text-5xl mb-4 text-gray-300"></i>
+                                <p class="text-sm font-medium text-gray-600">Belum ada aktivitas kehadiran hari ini</p>
+                                <p class="text-xs mt-1 text-gray-400">Data absensi akan otomatis muncul di sini</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('stat-hadir').innerText = 0;
+                document.getElementById('stat-telat').innerText = 0;
+                return;
+            }
+
+            appState.history.forEach(item => {
+                if(item.status.includes('Hadir') || item.status.includes('Belum')) hadirCount++;
+                if(item.late) telatCount++;
+
+                const photoInHtml = item.photoIn 
+                    ? `<img src="${item.photoIn}" class="w-10 h-10 rounded-lg object-cover border border-gray-200 shadow-sm cursor-pointer hover:scale-150 origin-left transition-transform relative z-10">` 
+                    : `<div class="w-10 h-10 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 text-xs"><i class="fas fa-camera-slash"></i></div>`;
+                
+                const photoOutHtml = item.photoOut 
+                    ? `<img src="${item.photoOut}" class="w-10 h-10 rounded-lg object-cover border border-gray-200 shadow-sm cursor-pointer hover:scale-150 origin-left transition-transform relative z-10">` 
+                    : `<div class="w-10 h-10 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 text-xs"><i class="fas fa-camera-slash"></i></div>`;
+
+                let statusBadge = item.late ? `<span class="px-3 py-1 bg-red-50 text-red-600 rounded-full text-xs font-bold border border-red-100">Terlambat</span>` : `<span class="px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold border border-green-100">Tepat Waktu</span>`;
+                if(item.status.includes('Belum')) statusBadge = `<span class="px-3 py-1 bg-yellow-50 text-yellow-700 rounded-full text-xs font-bold border border-yellow-100">Sedang Bekerja</span>`;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-blue-50/50 transition-colors group";
+                tr.innerHTML = `
+                    <td class="py-4 px-6">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-100 to-indigo-100 text-blue-700 flex items-center justify-center font-bold text-xs shadow-sm">${item.name ? item.name.substring(0,2).toUpperCase() : 'KD'}</div>
+                            <div>
+                                <p class="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors">${item.name || 'Nama Karyawan'}</p>
+                                <p class="text-[11px] text-gray-500">${item.role || 'Staff'}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-4 px-6 text-sm text-gray-600 font-medium">${item.date}</td>
+                    <td class="py-4 px-6">
+                        <div class="flex items-center space-x-3">
+                            ${photoInHtml}
+                            <span class="text-sm font-bold ${item.late ? 'text-red-600' : 'text-gray-700'}">${item.timeIn}</span>
+                        </div>
+                    </td>
+                    <td class="py-4 px-6">
+                        <div class="flex items-center space-x-3">
+                            ${photoOutHtml}
+                            <span class="text-sm font-bold text-gray-700">${item.timeOut}</span>
+                        </div>
+                    </td>
+                    <td class="py-4 px-6">${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Update widget text dashboard
+            document.getElementById('stat-hadir').innerText = hadirCount;
+            document.getElementById('stat-telat').innerText = telatCount;
+        }
+
+        // --- FUNGSI MANAJEMEN PENGUMUMAN ---
+        function submitAnnouncement() {
+            const title = document.getElementById('input-announcement-title').value;
+            const target = document.getElementById('input-announcement-target').value;
+            const message = document.getElementById('input-announcement-message').value;
+
+            if (!title || !message) {
+                showToast('Judul dan Isi Pesan wajib diisi!', 'error');
+                return;
+            }
+
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+
+            const newAnnouncement = {
+                id: Date.now(),
+                title: title,
+                target: target,
+                message: message,
+                date: dateStr
+            };
+
+            // Tambahkan ke data terbaru (di urutan pertama)
+            appState.announcements.unshift(newAnnouncement);
+            dbInsert('announcements', newAnnouncement); // Insert ke Supabase
+
+            // Kosongkan form
+            document.getElementById('input-announcement-title').value = '';
+            document.getElementById('input-announcement-message').value = '';
+
+            showToast('Pengumuman berhasil disebarkan!', 'success');
+
+            // Render ulang tampilan Admin & Pengguna
+            renderAdminAnnouncements();
+            renderEmployeeAnnouncements();
+        }
+
+        function deleteAnnouncement(id) {
+            appState.announcements = appState.announcements.filter(a => a.id !== id);
+            dbDelete('announcements', id); // Delete di Supabase
+            showToast('Pengumuman berhasil dihapus', 'success');
+            renderAdminAnnouncements();
+            renderEmployeeAnnouncements();
+        }
+
+        function renderAdminAnnouncements() {
+            const list = document.getElementById('admin-announcement-list');
+            if (!list) return;
+
+            list.innerHTML = '';
+            if (appState.announcements.length === 0) {
+                list.innerHTML = '<p class="text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-xl">Belum ada pengumuman terkirim.</p>';
+                return;
+            }
+
+            appState.announcements.forEach((ann, index) => {
+                const isBlue = index % 2 === 0; // Bergantian warna agar menarik
+                const bgClass = isBlue ? 'bg-blue-50 border-blue-100' : 'bg-gray-50 border-gray-100';
+                const textClassTitle = isBlue ? 'text-blue-900' : 'text-gray-800';
+                const textClassMsg = isBlue ? 'text-blue-700' : 'text-gray-600';
+                const textClassDate = isBlue ? 'text-blue-500' : 'text-gray-400';
+
+                const html = `
+                <div class="p-4 border ${bgClass} rounded-xl relative transition-all hover:shadow-md">
+                    <button onclick="if(confirm('Apakah Anda yakin ingin menghapus pengumuman ini?')) deleteAnnouncement(${ann.id})" class="absolute top-3 right-3 text-red-400 hover:text-red-600 focus:outline-none transition-transform hover:scale-110">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <div class="flex items-center space-x-2 mb-1">
+                        <h4 class="font-bold text-sm ${textClassTitle}">${ann.title}</h4>
+                        <span class="text-[9px] bg-white px-1.5 py-0.5 rounded shadow-sm font-semibold text-gray-500">${ann.target}</span>
+                    </div>
+                    <p class="text-xs ${textClassMsg} leading-relaxed">${ann.message}</p>
+                    <p class="text-[10px] ${textClassDate} mt-3 font-medium"><i class="fas fa-clock mr-1"></i> Terkirim: ${ann.date}</p>
+                </div>`;
+                list.insertAdjacentHTML('beforeend', html);
+            });
+        }
+
+        function renderEmployeeAnnouncements() {
+            const container = document.getElementById('employee-announcement-container');
+            if (!container) return;
+
+            container.innerHTML = '';
+
+            if (appState.announcements.length === 0) {
+                container.innerHTML = `
+                <div class="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-4 mb-8 border border-gray-200/50 flex items-start space-x-4 shadow-sm">
+                    <div class="bg-white p-2.5 rounded-full text-gray-400 shadow-sm">
+                        <i class="fas fa-info-circle mt-0.5 text-sm"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-gray-700">Pusat Informasi</h3>
+                        <p class="text-[11px] text-gray-500 mt-1 leading-relaxed">Belum ada pengumuman terbaru dari perusahaan saat ini.</p>
+                    </div>
+                </div>`;
+                return;
+            }
+
+            // Tampilkan hanya 1 pengumuman paling baru di banner Beranda Pengguna
+            const latest = appState.announcements[0];
+
+            container.innerHTML = `
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-4 mb-8 border border-blue-100/50 flex items-start space-x-4 shadow-sm relative overflow-hidden group">
+                <div class="absolute top-0 right-0 p-2 opacity-5 transition-transform group-hover:scale-110 group-hover:rotate-12 duration-500"><i class="fas fa-bullhorn text-6xl"></i></div>
+                <div class="bg-white p-2.5 rounded-full text-blue-600 shadow-sm relative z-10 shrink-0">
+                    <i class="fas fa-bullhorn mt-0.5 text-sm"></i>
+                </div>
+                <div class="relative z-10 pr-2 w-full">
+                    <div class="flex items-center justify-between mb-1">
+                        <h3 class="text-sm font-bold text-blue-900">${latest.title}</h3>
+                        <span class="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold shadow-sm whitespace-nowrap">${latest.date}</span>
+                    </div>
+                    <p class="text-[11px] text-blue-700 leading-relaxed pr-4">${latest.message}</p>
+                </div>
+            </div>
+            `;
+        }
+
+        // --- FUNGSI MANAJEMEN SLIP GAJI ---
+        function formatMonthYear(yyyymm) {
+            if(!yyyymm) return '-';
+            const [year, month] = yyyymm.split('-');
+            const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+            return `${months[parseInt(month)-1]} ${year}`;
+        }
+
+        function submitPayslip() {
+            const emp = document.getElementById('input-slip-emp').value;
+            const periodVal = document.getElementById('input-slip-period').value;
+            const fileInput = document.getElementById('input-slip-file');
+
+            if (!periodVal || !fileInput.files[0]) {
+                showToast('Periode bulan dan file PDF wajib diisi!', 'error');
+                return;
+            }
+
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+            
+            const newSlip = {
+                id: Date.now(),
+                empName: emp,
+                period: periodVal,
+                periodLabel: formatMonthYear(periodVal),
+                date: dateStr
+            };
+
+            appState.payslips.unshift(newSlip);
+            dbInsert('payslips', newSlip); // Insert ke Supabase
+            
+            // Reset form
+            document.getElementById('input-slip-period').value = '';
+            fileInput.value = '';
+            document.getElementById('slip-file-name').innerText = 'Klik untuk upload PDF';
+
+            showToast('Slip Gaji berhasil diupload & dikirim!', 'success');
+            
+            renderAdminPayslips();
+            renderEmployeePayslips();
+        }
+
+        function deletePayslip(id) {
+            appState.payslips = appState.payslips.filter(p => p.id !== id);
+            dbDelete('payslips', id); // Delete dari Supabase
+            showToast('Slip gaji berhasil dihapus', 'success');
+            renderAdminPayslips();
+            renderEmployeePayslips();
+        }
+
+        function renderAdminPayslips() {
+            const tbody = document.getElementById('admin-table-slip');
+            if(!tbody) return;
+            tbody.innerHTML = '';
+
+            if (appState.payslips.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-gray-400">Belum ada slip gaji yang diunggah.</td></tr>`;
+                return;
+            }
+
+            appState.payslips.forEach(slip => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50 transition-colors";
+                tr.innerHTML = `
+                    <td class="py-4 px-6 font-bold text-sm text-gray-800">${slip.periodLabel}</td>
+                    <td class="py-4 px-6 text-sm text-gray-600">${slip.empName}</td>
+                    <td class="py-4 px-6 text-xs text-gray-500">${slip.date}</td>
+                    <td class="py-4 px-6">
+                        <button onclick="if(confirm('Yakin ingin menghapus slip gaji ini?')) deletePayslip(${slip.id})" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg transition-transform active:scale-90" title="Hapus"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderEmployeePayslips() {
+            const container = document.getElementById('employee-payslip-list');
+            if(!container) return;
+            container.innerHTML = '';
+
+            // Filter agar hanya memunculkan slip untuk "Karyawan Demo" (atau yg ditujukan untuk Semua Karyawan)
+            const userSlips = appState.payslips.filter(s => s.empName === 'Karyawan Demo' || s.empName === 'Semua Karyawan');
+
+            if(userSlips.length === 0) {
+                container.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-10 text-gray-400">
+                    <i class="fas fa-folder-open text-4xl mb-3 text-gray-300"></i>
+                    <p class="text-sm font-medium">Belum ada slip gaji untuk Anda.</p>
+                </div>`;
+                return;
+            }
+
+            userSlips.forEach(slip => {
+                const html = `
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center transition-all hover:shadow-md">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-green-50 text-green-600 rounded-lg flex items-center justify-center text-lg">
+                            <i class="fas fa-file-invoice-dollar"></i>
+                        </div>
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">${slip.periodLabel}</p>
+                            <p class="text-[10px] text-gray-500 mt-0.5">Diterbitkan: ${slip.date}</p>
+                        </div>
+                    </div>
+                    <button onclick="simulateDownload(this, 'Slip_Gaji_${slip.periodLabel.replace(' ','_')}')" class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition focus:outline-none" title="Download Slip">
+                        <i class="fas fa-download"></i>
+                    </button>
+                </div>`;
+                container.insertAdjacentHTML('beforeend', html);
+            });
+        }
+
+        // --- FUNGSI PETA KARYAWAN (KEHADIRAN) ---
+        let employeeMap = null;
+        let employeeMarker = null;
+        let employeeOfficeCircle = null;
+        let watchId = null;
+
+        // Hardcoded office location untuk demo (bisa ditarik dari data appState.locations nanti)
+        const officeLat = -6.2088;
+        const officeLng = 106.8456;
+        const officeRadius = 50; // Radius toleransi absen 50 meter
+
+        function initEmployeeMap() {
+            if (!document.getElementById('employee-map')) return;
+
+            if (!employeeMap) {
+                // Inisialisasi peta tanpa tombol zoom agar tampilan mobile lebih bersih
+                employeeMap = L.map('employee-map', { zoomControl: false }).setView([officeLat, officeLng], 16);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(employeeMap);
+                
+                // Gambar Area Geofence (Lingkaran Biru)
+                employeeOfficeCircle = L.circle([officeLat, officeLng], {
+                    color: '#3b82f6',
+                    fillColor: '#3b82f6',
+                    fillOpacity: 0.15,
+                    weight: 2,
+                    radius: officeRadius
+                }).addTo(employeeMap);
+
+                // Tandai Titik Tengah Kantor
+                L.marker([officeLat, officeLng], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: "<div style='background-color:#3b82f6; width:12px; height:12px; border-radius:50%; border:2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5); margin-top:-6px; margin-left:-6px;'></div>",
+                        iconSize: [12, 12],
+                        iconAnchor: [0, 0]
+                    })
+                }).addTo(employeeMap);
+
+                startLocationTracking();
+            } else {
+                employeeMap.invalidateSize();
+            }
+        }
+
+        function startLocationTracking() {
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
+                        updateEmployeeLocation(lat, lng, accuracy);
+                    },
+                    (error) => {
+                        console.warn("Geolocation error atau diblokir:", error);
+                        // Fallback simulasi jika GPS diblokir browser (untuk keperluan demo agar peta tetap jalan)
+                        simulateEmployeeLocation();
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                simulateEmployeeLocation();
+            }
+        }
+
+        function simulateEmployeeLocation() {
+            // Simulasi titik lokasi user sedikit bergeser dari kantor pusat agar seolah-olah valid
+            updateEmployeeLocation(officeLat + 0.0001, officeLng + 0.0001, 12.5);
+        }
+
+        function updateEmployeeLocation(lat, lng, accuracy) {
+            if (!employeeMap) return;
+
+            const latLng = [lat, lng];
+
+            // Render/Update Marker User (Animasi Pulse Biru)
+            if (!employeeMarker) {
+                employeeMarker = L.marker(latLng, {
+                    icon: L.divIcon({
+                        className: 'user-marker',
+                        html: "<div class='flex items-center justify-center w-10 h-10 bg-blue-500/20 rounded-full animate-pulse'><div class='w-4 h-4 bg-blue-600 border-2 border-white rounded-full shadow-[0_0_10px_rgba(37,99,235,0.8)]'></div></div>",
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]
+                    })
+                }).addTo(employeeMap);
+            } else {
+                employeeMarker.setLatLng(latLng);
+            }
+
+            // Fokus peta ke lokasi user
+            employeeMap.setView(latLng, 17);
+
+            // Update Text Akurasi
+            document.getElementById('gps-accuracy').innerText = `± ${accuracy.toFixed(1)} Meter`;
+            
+            // Kalkulasi jarak (Geofencing Logic)
+            const distance = employeeMap.distance([officeLat, officeLng], latLng);
+            const statusEl = document.getElementById('geofence-status');
+            const locationTextEl = document.getElementById('employee-location-text');
+            
+            if (distance <= officeRadius) {
+                statusEl.className = "px-3 py-1 bg-green-50 text-green-600 text-[10px] font-bold rounded-full border border-green-100 flex items-center shadow-sm";
+                statusEl.innerHTML = "<i class='fas fa-check-circle mr-1'></i> Di Dalam Area";
+                locationTextEl.innerText = "Kantor Pusat, Jakarta";
+            } else {
+                statusEl.className = "px-3 py-1 bg-red-50 text-red-600 text-[10px] font-bold rounded-full border border-red-100 flex items-center shadow-sm";
+                statusEl.innerHTML = "<i class='fas fa-times-circle mr-1'></i> Di Luar Area";
+                locationTextEl.innerText = "Berada di luar radius absen";
+            }
+        }
+
+    </script>
+</body>
+</html>
