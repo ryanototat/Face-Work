@@ -9,8 +9,6 @@
     <!-- Peta Interaktif (Leaflet.js) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- Supabase SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- FontAwesome untuk Ikon -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <!-- Google Fonts -->
@@ -728,41 +726,61 @@
     </div>
 
     <script>
-        // --- KONFIGURASI SUPABASE ---
-        const SUPABASE_URL = 'https://czpkzknusworbekwcznd.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6cGt6a251c3dvcmJla3djem5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNTkxMTIsImV4cCI6MjA4OTYzNTExMn0.Sv0Er28k3kRI_XMFWj3pRdIwse37zMz2ackMFzPgX5w';
-        
-        let supabaseClient = null;
-        if(SUPABASE_URL !== 'https://czpkzknusworbekwcznd.supabase.co' && typeof supabase !== 'undefined') {
-            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
+        // --- KONFIGURASI GOOGLE APPS SCRIPT ---
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwu5S9aPIUnRKCXQzXkMBa_abe36w5gPVTLsZNkrJKcaNgW4tUuNE5rT-95u59cdC2D/exec';
 
-        // State Aplikasi
-        let currentUser = null; // Menyimpan data karyawan yang sedang login
-        let cameraStream = null;
-        let currentAbsenType = '';
-        let currentHistoryFilter = 'semua';
+// Helper function agar tidak perlu menulis ulang header CORS berkali-kali
+async function sendToGAS(payload) {
+    if (!GAS_URL) return null;
+    try {
+        const response = await fetch(GAS_URL, {
+            method: 'POST',
+            // Gunakan text/plain untuk membypass preflight CORS OPTIONS dari browser
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8', 
+            },
+            body: JSON.stringify(payload),
+            // Wajib 'follow' karena GAS akan melakukan redirect 302 secara internal
+            redirect: 'follow' 
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Network/CORS Error:', error);
+        return null;
+    }
+}
 
-        const appState = {
-            today: new Date(),
-            hasClockedIn: false,
-            hasClockedOut: false,
-            timeIn: null,
-            timeOut: null,
-            history: [],
-            requests: { cuti: [], lembur: [], manual: [], kasbon: [], reimburse: [] },
-            employees: [],
-            locations: [
-                { id: 1, name: 'Kantor Pusat Jakarta', lat: '-6.2088', lng: '106.8456', radius: '50', status: 'Aktif' },
-                { id: 2, name: 'Cabang Bandung', lat: '-6.9175', lng: '107.6191', radius: '30', status: 'Aktif' }
-            ],
-            announcements: [
-                { id: 2, title: 'Pemeliharaan Server Aplikasi', message: 'Aplikasi akan mengalami kendala akses pada hari Sabtu pukul 00:00 - 04:00 WIB.', target: 'Semua Karyawan', date: '18 Mar 2026' },
-                { id: 1, title: 'Cuti Bersama Hari Raya', message: 'Diberitahukan kepada seluruh karyawan bahwa cuti bersama akan dimulai hari selasa minggu depan.', target: 'Semua Karyawan', date: '10 Mar 2026' }
-            ],
-            payslips: []
-        };
+// Implementasi ulang helper database menggunakan fungsi sendToGAS
+async function dbInsert(table, data) {
+    await sendToGAS({ action: 'insert', table: table, data: data });
+}
 
+async function dbUpdate(table, id, data) {
+    await sendToGAS({ action: 'update', table: table, id: id, data: data });
+}
+
+async function dbDelete(table, id) {
+    await sendToGAS({ action: 'delete', table: table, id: id });
+}
+
+async function loadAllData() {
+    const result = await sendToGAS({ action: 'loadAllData' });
+    if (!result) return;
+
+    // Sinkronisasi data dari GAS ke state lokal
+    if (result.employees && result.employees.length > 0) appState.employees = result.employees;
+    if (result.history && result.history.length > 0) appState.history = result.history;
+    if (result.locations && result.locations.length > 0) appState.locations = result.locations;
+    if (result.announcements && result.announcements.length > 0) appState.announcements = result.announcements;
+    if (result.payslips && result.payslips.length > 0) appState.payslips = result.payslips;
+
+    if (result.requests && result.requests.length > 0) {
+        appState.requests = { cuti: [], lembur: [], manual: [], kasbon: [], reimburse: [] };
+        result.requests.forEach(r => {
+            if (appState.requests[r.type]) appState.requests[r.type].push(r);
+        });
+    }
+}
         // --- HELPER DATABASE ---
         async function loadAllData() {
             if(!supabaseClient) return;
