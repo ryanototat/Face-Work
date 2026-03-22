@@ -727,95 +727,79 @@
 
     <script>
         // --- KONFIGURASI GOOGLE APPS SCRIPT ---
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwu5S9aPIUnRKCXQzXkMBa_abe36w5gPVTLsZNkrJKcaNgW4tUuNE5rT-95u59cdC2D/exec';
-
-// Helper function agar tidak perlu menulis ulang header CORS berkali-kali
-async function sendToGAS(payload) {
-    if (!GAS_URL) return null;
-    try {
-        const response = await fetch(GAS_URL, {
-            method: 'POST',
-            // Gunakan text/plain untuk membypass preflight CORS OPTIONS dari browser
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8', 
-            },
-            body: JSON.stringify(payload),
-            // Wajib 'follow' karena GAS akan melakukan redirect 302 secara internal
-            redirect: 'follow' 
-        });
-        return await response.json();
-    } catch (error) {
-        console.error('Network/CORS Error:', error);
-        return null;
-    }
-}
-
-// Implementasi ulang helper database menggunakan fungsi sendToGAS
-async function dbInsert(table, data) {
-    await sendToGAS({ action: 'insert', table: table, data: data });
-}
-
-async function dbUpdate(table, id, data) {
-    await sendToGAS({ action: 'update', table: table, id: id, data: data });
-}
-
-async function dbDelete(table, id) {
-    await sendToGAS({ action: 'delete', table: table, id: id });
-}
-
-async function loadAllData() {
-    const result = await sendToGAS({ action: 'loadAllData' });
-    if (!result) return;
-
-    // Sinkronisasi data dari GAS ke state lokal
-    if (result.employees && result.employees.length > 0) appState.employees = result.employees;
-    if (result.history && result.history.length > 0) appState.history = result.history;
-    if (result.locations && result.locations.length > 0) appState.locations = result.locations;
-    if (result.announcements && result.announcements.length > 0) appState.announcements = result.announcements;
-    if (result.payslips && result.payslips.length > 0) appState.payslips = result.payslips;
-
-    if (result.requests && result.requests.length > 0) {
-        appState.requests = { cuti: [], lembur: [], manual: [], kasbon: [], reimburse: [] };
-        result.requests.forEach(r => {
-            if (appState.requests[r.type]) appState.requests[r.type].push(r);
-        });
-    }
-}
-        // --- HELPER DATABASE ---
-        async function loadAllData() {
-            if(!supabaseClient) return;
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbxis7LdOXcjeNSvBIcV2m7p5N45Z7ThrH-XquKORcSZcoo5TeHBqo80whXNJ_HxUr-6/exec';
+        
+        // Helper Database Utama
+        async function sendToGAS(payload) {
+            if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbxis7LdOXcjeNSvBIcV2m7p5N45Z7ThrH-XquKORcSZcoo5TeHBqo80whXNJ_HxUr-6/exec') {
+                console.warn("GAS_URL belum dikonfigurasi.");
+                return null;
+            }
             try {
-                const { data: emp } = await supabaseClient.from('employees').select('*');
-                if(emp && emp.length > 0) appState.employees = emp;
-                
-                const { data: hist } = await supabaseClient.from('history').select('*').order('id', {ascending: false});
-                if(hist && hist.length > 0) appState.history = hist;
-
-                const { data: loc } = await supabaseClient.from('locations').select('*');
-                if(loc && loc.length > 0) appState.locations = loc;
-
-                const { data: ann } = await supabaseClient.from('announcements').select('*').order('id', {ascending: false});
-                if(ann && ann.length > 0) appState.announcements = ann;
-
-                const { data: pay } = await supabaseClient.from('payslips').select('*').order('id', {ascending: false});
-                if(pay && pay.length > 0) appState.payslips = pay;
-
-                const { data: reqs } = await supabaseClient.from('requests').select('*').order('id', {ascending: false});
-                if(reqs && reqs.length > 0) {
-                    appState.requests = { cuti: [], lembur: [], manual: [], kasbon: [], reimburse: [] };
-                    reqs.forEach(r => { if(appState.requests[r.type]) appState.requests[r.type].push(r); });
-                }
-            } catch(e) { console.error('Gagal memuat data:', e); }
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Bypass CORS Preflight
+                    body: JSON.stringify(payload),
+                    redirect: 'follow'
+                });
+                return await response.json();
+            } catch (error) {
+                console.error('Koneksi ke server gagal:', error);
+                return null;
+            }
         }
 
         async function dbInsert(table, data) {
-            if(supabaseClient) { const { error } = await supabaseClient.from(table).insert([data]); if(error) console.error(error); }
+            await sendToGAS({ action: 'insert', table: table, data: data });
         }
+
         async function dbUpdate(table, id, data) {
-            if(supabaseClient) { const { error } = await supabaseClient.from(table).update(data).eq('id', id); if(error) console.error(error); }
+            await sendToGAS({ action: 'update', table: table, id: id, data: data });
         }
+
         async function dbDelete(table, id) {
-            if(supabaseClient) { const { error } = await supabaseClient.from(table).delete().eq('id', id); if(error) console.error(error); }
+            await sendToGAS({ action: 'delete', table: table, id: id });
+        }
+
+        async function loadAllData() {
+            const result = await sendToGAS({ action: 'loadAllData' });
+            if (!result) return;
+
+            // Sinkronisasi data ke state lokal & urutkan id terbaru di atas
+            if (result.employees && result.employees.length > 0) appState.employees = result.employees;
+            
+            if (result.history && result.history.length > 0) {
+                appState.history = result.history.sort((a, b) => b.id - a.id);
+            }
+            if (result.locations && result.locations.length > 0) {
+                appState.locations = result.locations;
+            }
+            if (result.announcements && result.announcements.length > 0) {
+                appState.announcements = result.announcements.sort((a, b) => b.id - a.id);
+            }
+            if (result.payslips && result.payslips.length > 0) {
+                appState.payslips = result.payslips.sort((a, b) => b.id - a.id);
+            }
+            if (result.requests && result.requests.length > 0) {
+                appState.requests = { cuti: [], lembur: [], manual: [], kasbon: [], reimburse: [] };
+                result.requests.sort((a, b) => b.id - a.id).forEach(r => {
+                    if (appState.requests[r.type]) appState.requests[r.type].push(r);
+                });
+            }
+
+            // Refresh UI setelah data baru berhasil didapat
+            renderHistory();
+            renderAdminAnnouncements();
+            renderEmployeeAnnouncements();
+            renderAdminPayslips();
+            renderEmployeePayslips();
+            
+            // Render panel admin jika admin sedang login
+            if (!document.getElementById('view-admin').classList.contains('hidden')) {
+                renderKaryawanTable();
+                renderLokasiTable();
+                renderAdminDashboard();
+            }
         }
 
         // --- FUNGSI LOGIN ---
