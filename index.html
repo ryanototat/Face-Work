@@ -727,53 +727,62 @@
 
     <script>
         // --- KONFIGURASI GOOGLE APPS SCRIPT ---
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbxis7LdOXcjeNSvBIcV2m7p5N45Z7ThrH-XquKORcSZcoo5TeHBqo80whXNJ_HxUr-6/exec';
-        
-        // Helper Database Utama yang Tahan Banting
-        async function sendToGAS(payload) {
-            if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbxis7LdOXcjeNSvBIcV2m7p5N45Z7ThrH-XquKORcSZcoo5TeHBqo80whXNJ_HxUr-6/exec') {
-                console.warn("GAS_URL belum dimasukkan!");
-                return null;
-            }
+        // Masukkan URL Web App dari GAS di sini
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbxis7LdOXcjeNSvBIcV2m7p5N45Z7ThrH-XquKORcSZcoo5TeHBqo80whXNJ_HxUr-6/exec'; 
 
+        // --- HELPER DATABASE GAS ---
+        async function dbInsert(table, data) {
             try {
-                console.log(`📡 Mengirim request [${payload.action}] ke Backend...`);
-                
-                const response = await fetch(GAS_URL, {
+                await fetch(GAS_URL, {
                     method: 'POST',
-                    headers: { 
-                        'Content-Type': 'text/plain;charset=utf-8' 
-                    },
-                    body: JSON.stringify(payload)
+                    mode: 'no-cors', // Penting untuk mencegah error CORS di GAS
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'insert', table: table, data: data })
                 });
+            } catch(e) { console.error('Insert error:', e); }
+        }
 
-                // Tangkap sebagai teks mentah dulu untuk menghindari crash JSON.parse
-                const rawText = await response.text();
+        async function dbUpdate(table, id, data) {
+            try {
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'update', table: table, id: id, data: data })
+                });
+            } catch(e) { console.error('Update error:', e); }
+        }
+
+        async function dbDelete(table, id) {
+            try {
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'delete', table: table, id: id })
+                });
+            } catch(e) { console.error('Delete error:', e); }
+        }
+
+        async function loadAllData() {
+            try {
+                const response = await fetch(GAS_URL);
+                const data = await response.json();
                 
-                try {
-                    const jsonData = JSON.parse(rawText);
-                    
-                    // Cek jika GAS mengirimkan pesan error dari try-catch di backend
-                    if (jsonData.error) {
-                        console.error(`🚨 Error dari GAS [${payload.action}]:`, jsonData.error);
-                        if(jsonData.stack) console.error(jsonData.stack);
-                        showToast(`Server Error: ${jsonData.error}`, 'error');
-                        return null;
-                    }
-
-                    console.log(`✅ Berhasil [${payload.action}]:`, jsonData);
-                    return jsonData;
-
-                } catch (parseError) {
-                    console.error("🚨 Gagal memproses JSON. Respon asli dari server:", rawText);
-                    showToast("Terjadi kendala saat membaca data dari server.", "error");
-                    return null;
+                if(data.employees && data.employees.length > 0) appState.employees = data.employees;
+                if(data.history && data.history.length > 0) appState.history = data.history.reverse();
+                if(data.locations && data.locations.length > 0) appState.locations = data.locations;
+                if(data.announcements && data.announcements.length > 0) appState.announcements = data.announcements.reverse();
+                if(data.payslips && data.payslips.length > 0) appState.payslips = data.payslips.reverse();
+                
+                if(data.requests && data.requests.length > 0) {
+                    appState.requests = { cuti: [], lembur: [], manual: [], kasbon: [], reimburse: [] };
+                    data.requests.reverse().forEach(r => {
+                        if(appState.requests[r.type]) appState.requests[r.type].push(r);
+                    });
                 }
-
-            } catch (networkError) {
-                console.error('🚨 Error Koneksi/CORS:', networkError);
-                showToast("Gagal terhubung ke database. Cek koneksi internet.", "error");
-                return null;
+            } catch(e) {
+                console.error('Gagal memuat data dari GAS:', e);
             }
         }
 
